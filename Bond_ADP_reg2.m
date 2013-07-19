@@ -41,6 +41,7 @@ end
 ltopt = zeros(NPt,Npii,T);
 [X,Y] = meshgrid(pii,Pt');
 
+% generate lookup table for first N samples
 for n = 1:N
     n
     % initial state variables
@@ -68,10 +69,7 @@ for n = 1:N
             Lt2 = exp(-(pts - pts(5)).^2/(2*sgma^2));
             piplus = P*Lt1./(P*Lt1 + (1-P)*Lt2);
             
-            % do interpolation for Vtp1
-            %for i = 1:6
-            %    Vpts(i) = interp2(X,Y,squeeze(V(:,:,t+1)),piplus(i),pts(i));
-            %end
+            % do interpolation for Vtp1 (for lookup table)
             Vpts = interp2(X,Y,squeeze(V(:,:,t+1)),piplus,pts);
             
             E1 = .185*Vpts(1)+.63*Vpts(2)+.185*Vpts(3);
@@ -79,18 +77,22 @@ for n = 1:N
             
             Vdum(k) = U + dlta*(P*E1+(1-P)*E2);
         end
-        if rand <= p                          % make a random decision
-            Vnthelp = Vdum(~isnan(Vdum));   % make sure it isn't NaN
+        if rand <= p            % make a random decision to explore space
+            Vnthelp = Vdum(~isnan(Vdum));
             Vnthelp2 = randperm(length(Vnthelp));
             Vnt = Vnthelp(Vnthelp2(1));
         else
             Vnt = max(Vdum);
         end
+        
+        % put decisions and function values in lookup table
         ltdum = lt(Vnt==Vdum);
         V(S==Pt,P==pii,t) = Vnt;
         ltopt(S==Pt,P==pii,t) = ltdum;
-        Sdum = gmma*S + b + ltdum + P*r*(S>Pcrit1) + (1-P)*r*(S>Pcrit2) + randn*sgma;
         
+        % calculate (random) state and probability estimate for next
+        % timestep
+        Sdum = gmma*S + b + ltdum + P*r*(S>Pcrit1) + (1-P)*r*(S>Pcrit2) + randn*sgma;       
         Lt1b = exp(-(Sdum - (gmma*S + b + ltdum + (S>Pcrit1)*r))^2/(2*sgma^2));
         Lt2b = exp(-(Sdum - (gmma*S + b + ltdum + (S>Pcrit2)*r))^2/(2*sgma^2));
         Pdum = P*Lt1b/(P*Lt1b + (1-P)*Lt2b);
@@ -116,12 +118,12 @@ end
 dVdPt = squeeze(V(2:end,:,1) - V(1:end-1,:,1));
 meandV = abs(mean(dVdPt,2));
 [~,IX] = sort(meandV,'descend');
-b1 = min([IX(1) IX(2)]);    % lower Pt threshold for jump
-b2 = max([IX(1) IX(2)]);    % upper Pt threshold for jump
+b1 = min([IX(1) IX(2)]);    % lower Pt boundary
+b2 = max([IX(1) IX(2)]);    % upper Pt boundary
 
 % do initial regression
 
-% set up regression vectors
+% set up regression vectors for 3 planes
 regvec1 = zeros(b1*length(pii),2);
 regvec1(:,1) = kron(ones(length(pii),1),Pt(1:b1)');
 regvec1(:,2) = kron(pii',ones(b1,1));
@@ -134,10 +136,11 @@ regvec3 = zeros((length(Pt)-b2)*length(pii),2);
 regvec3(:,1) = kron(ones(length(pii),1),Pt(b2+1:end)');
 regvec3(:,2) = kron(pii',ones((length(Pt)-b2),1));
 
+% initialize matrix to store regressoin coefficients
 coefmat = zeros(T,3,3); % time, plane, param
 coefmat(end,:,:) = [2 -1 -1.5; 2 -1 -1.5; 2 -1 -1.5];
-%
-% get regression parameters for each timestep
+
+% calculate regression parameters for each timestep
 for t = 1:T-1
     Vdum = squeeze(V(:,:,t));
     V1dum = Vdum(1:b1,:);
@@ -158,53 +161,22 @@ for t = 1:T-1
 end
 coefmatold = coefmat;
 
-
-% % test by plotting this
+% plot function values from lookup table
 figure
 surf(Pt,pii,squeeze(V(:,:,1))')
-% 
-% figure
-% hold on
-% surf(pii,Pt(1:b1),V1dum)
-% surf(pii,Pt(b1+1:b2),V2dum)
-% surf(pii,Pt(b2+1:end),V3dum)
-% 
-% figure
-% hold on
-% surf(pii,Pt(1:b1),reshape(V1fit(regvec1(:,1),regvec1(:,2)),b1,length(pii)))
-% surf(pii,Pt(b1+1:b2),reshape(V2fit(regvec2(:,1),regvec2(:,2)),b2-b1,length(pii)))
-% surf(pii,Pt(b2+1:end),reshape(V3fit(regvec3(:,1),regvec3(:,2)),length(Pt)-b2,length(pii)))
 
-% % this is redundant--comment it out for full code
-% Pcrit1 = .2; % or .7    % critical threshold
-% Pcrit2 = .7;
-% gmma = .1;              % decay rate of P concentration
-% b = .02;                % natural baseline loading
-% r = .2;                 % P recycling parameter
-% dlta = .99;             % discount factor
-% bta = 1.5;              % relative marginal utility of loadings
-% sgma = .141421;         % st dev of stochastic shock
-% N = 100;                % no. samples total, for initial data collection
-% p = .05;                % probabilit it jumps to a random decision
-% 
-% pct5 = norminv(.05,0,sgma);
-% pct95 = norminv(.95,0,sgma);
-% 
-% NPt = 41;               % no. grid points for Pt
-% Npii = 41;              % no. grid points for pii
-% Nlt = 161;              % no. grid points for P loadings
-% %Hn = 16;                % Hermite nodes and weights
-% %eps = .001;             % Value function error tolerance
-% 
-% Pt = linspace(0,1,NPt);
-% pii = linspace(0,1,Npii);
-% lt = linspace(0,.8,Nlt);
-% T = 10; 
-% % end redundant material for debugging
+%% ADP stage
 
+% Within each plane, the objective function is linear in the decision
+% variable (loading rate). Therefore the optimal loading rate will either
+% be 0, 1, or such that it places the expected concentration (or the 5th or
+% 95th percentile concentration, which are also used to calculate the
+% expected value of the objective function at t+1) on a plane boundary
+
+% plane boundaries to test
 testbnd = Pt([b1 b1+1 b2 b2+1]);
-%%
 
+% number of ADP iterations
 M = 10000;
 for m = 1:M
     % start somewhere random  
@@ -212,6 +184,9 @@ for m = 1:M
     S = Pt(randdum(1));
     randdum2 = randperm(Npii);
     P = pii(randdum2(1));
+    
+    % sample path of concentrations, probabilities, and objective function
+    % values for each timestep
     newVs = zeros(3,T-1);
     for t = 1:T-1
         newVs(1,t) = S;
@@ -226,14 +201,19 @@ for m = 1:M
             (S>Pcrit2)*r;
             (S>Pcrit2)*r + pct95];
         ltbnd = kron(ones(6,1),ltbndhelp) - kron(ones(1,4),ltbndhelp2);
+        
+        % get rid of loading rates outside domain
         ltbnd(ltbnd<0) = NaN;
         ltbnd(ltbnd>1) = NaN;
         ltbnd = ltbnd(:);
         ltbnd = ltbnd(~isnan(ltbnd));
+        
+        % also test loading rates of 0 and 1
         ltbnd = [ltbnd; 0; 1];
+        
+        % get rid of duplicates
         [~,index] = unique(ltbnd,'first');
         ltbnd = ltbnd(sort(index));
-        
         
         % evaluate functions for each lt point
         Vdum = zeros(1,length(ltbnd));
@@ -256,7 +236,7 @@ for m = 1:M
             Lt2 = exp(-(pts - pts(5)).^2/(2*sgma^2));
             piplus = P*Lt1./(P*Lt1 + (1-P)*Lt2);
             
-            % put together variables
+            % variable matrix
             varmat = [ones(1,6); pts'; piplus'];
             
             % calculate value function for t+1 in preparation for EV
@@ -265,6 +245,8 @@ for m = 1:M
             Vdum(i) = U + dlta*EVmult*Vprep;
         end
         
+        % explore parameter space sometimes, instead of taking optimal
+        % value
         if rand <= p
             ltdum = rand;
             U = bta*ltdum - S^2;
@@ -292,14 +274,9 @@ for m = 1:M
             Vprep = diag(coefmat2*varmat);
             EVmult = [P*[.185 .63 .185] (1-P)*[.185 .63 .185]];
             Vnew = U + dlta*EVmult*Vprep;
-        else
+        else % just take optimal value
             ltdum = ltbnd(Vdum==max(Vdum));
             Vnew = max(Vdum);
-            
-            %results.new(m,t,1) = S;
-            %results.new(m,t,2) = P;
-            %results.new(m,t,3) = ltdum;
-            %results.new(m,t,4) = Vnew;
         end
      
         % update coefficients with Bellman Error method
@@ -307,7 +284,7 @@ for m = 1:M
         % CALCULATING THE NEW POINTS JUST FINE, BUT THE INTERCEPT IS TOO
         % HIGH
         
-        % calculate error
+        % figure out which regression plane you're on and calculate error
         whichplane = (S<=Pt(b1)) + 2*((S>Pt(b1))&(S<=Pt(b2)))...
             + 3*(S>Pt(b2));
         error = Vnew - squeeze(coefmat(t,whichplane,:))'*[1; S; P];
@@ -323,12 +300,19 @@ for m = 1:M
         
         % update parameter
         coefmat(t,whichplane,:) = coefmat(t,whichplane,:) - alfa*error*grad;
-        %results.new(m,t,5) = coefmat(t,whichplane,1);
-        %results.new(m,t,6) = coefmat(t,w
         
-        % update state and probability
-        Sdum = gmma*S + b + ltdum + P*r*(S>Pcrit1) + (1-P)*r*(S>Pcrit2) + randn*sgma;
-        
+        % store initial state, probability, loading rate, function value,
+        % and coefficient estimates
+        if t==1
+            results.new(m,1) = S;
+            results.new(m,2) = P;
+            results.new(m,3) = ltdum;
+            results.new(m,4) = Vnew;
+            results.coefupd(m,:,:) = coefmat(t,:,:);
+        end
+
+        % update concentration and probability for next tiemstep
+        Sdum = gmma*S + b + ltdum + P*r*(S>Pcrit1) + (1-P)*r*(S>Pcrit2) + randn*sgma;        
         Lt1b = exp(-(Sdum - (gmma*S + b + ltdum + (S>Pcrit1)*r))^2/(2*sgma^2));
         Lt2b = exp(-(Sdum - (gmma*S + b + ltdum + (S>Pcrit2)*r))^2/(2*sgma^2));
         Pdum = P*Lt1b/(P*Lt1b + (1-P)*Lt2b);
@@ -340,13 +324,7 @@ for m = 1:M
             S = Sdum;
         end
         P = Pdum;    % update probability estimate
-        if t==1
-            results.new(m,1) = S;
-            results.new(m,2) = P;
-            results.new(m,3) = ltdum;
-            results.new(m,4) = Vnew;
-            results.coefupd(m,:,:) = coefmat(t,:,:);
-        end
+        
     end
 end
 
@@ -357,7 +335,9 @@ results.lt = lt;
 results.pii = pii;
 results.coefmat = coefmat;
 
-% plot some tests
+% diagnostic plots
+
+% final regression planes
 f1 = @(x,y) squeeze(coefmat(1,1,:))'*[1; x; y];
 f2 = @(x,y) squeeze(coefmat(1,2,:))'*[1; x; y];
 f3 = @(x,y) squeeze(coefmat(1,3,:))'*[1; x; y];
@@ -369,6 +349,7 @@ ezmesh(f3,[Pt(b2) 1 0 1])
 xlim([0 1])
 zlim([0 7])
 
+% initial regression planes (regressed from lookup table)
 f1 = @(x,y) squeeze(coefmatold(1,1,:))'*[1; x; y];
 f2 = @(x,y) squeeze(coefmatold(1,2,:))'*[1; x; y];
 f3 = @(x,y) squeeze(coefmatold(1,3,:))'*[1; x; y];
@@ -380,6 +361,7 @@ ezmesh(f3,[Pt(b2) 1 0 1])
 xlim([0 1])
 zlim([0 4])
 
+% parameter estimates as a function of iteration
 figure
 for i = 1:3
     subplot(1,3,i)
