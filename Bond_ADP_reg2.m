@@ -15,8 +15,8 @@ r = .2;                 % P recycling parameter
 dlta = .99;             % discount factor
 bta = 1.5;              % relative marginal utility of loadings
 sgma = .141421;         % st dev of stochastic shock
-N = 100;                % no. samples total, for initial data collection
-p = .05;                % probabilit it jumps to a random decision
+N = 3000; %NOT ENOUGH               % no. samples total, for initial data collection
+p = 0;                % probabilit it jumps to a random decision
 
 pct5 = norminv(.05,0,sgma);
 pct95 = norminv(.95,0,sgma);
@@ -32,23 +32,17 @@ pii = linspace(0,1,Npii);
 lt = linspace(0,.8,Nlt);
 T = 10;                 % time span
 
-%count = 1;              % set iteration counter
+% sample points to fit initial regression
 
-%Vold = zeros(NPt,Npii);
 V = zeros(NPt,Npii,T);
 for i = 1:NPt
     V(i,:,end) = .5*pii-Pt(i);      % find appropriate final condition
 end
-
 ltopt = zeros(NPt,Npii,T);
-%ltold = ones(NPt, Npii,T);
-
 [X,Y] = meshgrid(pii,Pt');
 
-%create sample path
-%omga = randn(1,T+1);
-
 for n = 1:N
+    n
     % initial state variables
     randdum = randperm(NPt);
     S = Pt(randdum(1));
@@ -111,18 +105,12 @@ for n = 1:N
     end
 end
 
-% now onto the regression part
-M = 1000;                       % how many iterations
-%Vreg = zeros(3,T);
-%Vreg(:,T) = [0; -1; .5];
-
-%%
-clear
-load Bond_ADP2
-V = results.V;
-T = 10;
-Pt = results.Pt;
-pii = results.pii;
+% %% or just load points from a workspace, if not sampling
+% clear
+% load Bond_ADP2
+% V = results.V;
+% Pt = results.Pt;
+% pii = results.pii;
 
 % find boundaries of planes
 dVdPt = squeeze(V(2:end,:,1) - V(1:end-1,:,1));
@@ -169,10 +157,11 @@ for t = 1:T-1
     coefmat(t,3,:) = coeffvalues(V3fit);
 end
 coefmatold = coefmat;
-%
+
+
 % % test by plotting this
-% figure
-% surf(pii,Pt,squeeze(V(:,:,1)))
+figure
+surf(Pt,pii,squeeze(V(:,:,1))')
 % 
 % figure
 % hold on
@@ -180,45 +169,43 @@ coefmatold = coefmat;
 % surf(pii,Pt(b1+1:b2),V2dum)
 % surf(pii,Pt(b2+1:end),V3dum)
 % 
-% % fix this: might have to do vector to matrix
 % figure
 % hold on
 % surf(pii,Pt(1:b1),reshape(V1fit(regvec1(:,1),regvec1(:,2)),b1,length(pii)))
 % surf(pii,Pt(b1+1:b2),reshape(V2fit(regvec2(:,1),regvec2(:,2)),b2-b1,length(pii)))
 % surf(pii,Pt(b2+1:end),reshape(V3fit(regvec3(:,1),regvec3(:,2)),length(Pt)-b2,length(pii)))
 
-% update regression
-M = 10;
-
-% this is redundant--comment it out for full code
-Pcrit1 = .2; % or .7    % critical threshold
-Pcrit2 = .7;
-gmma = .1;              % decay rate of P concentration
-b = .02;                % natural baseline loading
-r = .2;                 % P recycling parameter
-dlta = .99;             % discount factor
-bta = 1.5;              % relative marginal utility of loadings
-sgma = .141421;         % st dev of stochastic shock
-N = 100;                % no. samples total, for initial data collection
-p = .05;                % probabilit it jumps to a random decision
-
-pct5 = norminv(.05,0,sgma);
-pct95 = norminv(.95,0,sgma);
-
-NPt = 41;               % no. grid points for Pt
-Npii = 41;              % no. grid points for pii
-Nlt = 161;              % no. grid points for P loadings
-%Hn = 16;                % Hermite nodes and weights
-%eps = .001;             % Value function error tolerance
-
-Pt = linspace(0,1,NPt);
-pii = linspace(0,1,Npii);
-lt = linspace(0,.8,Nlt);
-T = 10; 
-% end redundant material for debugging
+% % this is redundant--comment it out for full code
+% Pcrit1 = .2; % or .7    % critical threshold
+% Pcrit2 = .7;
+% gmma = .1;              % decay rate of P concentration
+% b = .02;                % natural baseline loading
+% r = .2;                 % P recycling parameter
+% dlta = .99;             % discount factor
+% bta = 1.5;              % relative marginal utility of loadings
+% sgma = .141421;         % st dev of stochastic shock
+% N = 100;                % no. samples total, for initial data collection
+% p = .05;                % probabilit it jumps to a random decision
+% 
+% pct5 = norminv(.05,0,sgma);
+% pct95 = norminv(.95,0,sgma);
+% 
+% NPt = 41;               % no. grid points for Pt
+% Npii = 41;              % no. grid points for pii
+% Nlt = 161;              % no. grid points for P loadings
+% %Hn = 16;                % Hermite nodes and weights
+% %eps = .001;             % Value function error tolerance
+% 
+% Pt = linspace(0,1,NPt);
+% pii = linspace(0,1,Npii);
+% lt = linspace(0,.8,Nlt);
+% T = 10; 
+% % end redundant material for debugging
 
 testbnd = Pt([b1 b1+1 b2 b2+1]);
-%
+%%
+
+M = 10000;
 for m = 1:M
     % start somewhere random  
     randdum = randperm(NPt);
@@ -229,13 +216,6 @@ for m = 1:M
     for t = 1:T-1
         newVs(1,t) = S;
         newVs(2,t) = P;
-%         if S <= Pt(b1)
-%             newVs(3,t) = coefmat(t,1,:)*[1; S; P];
-%         elseif S <= Pt(b2)
-%             newVs(3,t) = coefmat(t,2,:)*[1; S; P];
-%         else
-%             newVs(3,t) = coefmat(t,3,:)*[1; S; P];
-%         end
         
         % find lt points on plane boundaries to test
         ltbndhelp = testbnd - gmma*S - b;
@@ -285,39 +265,6 @@ for m = 1:M
             Vdum(i) = U + dlta*EVmult*Vprep;
         end
         
-%         Vdum = zeros(1,Nlt);
-%         for k = 1:Nlt % NO. FIX THIS. SHOULDN'T BE ITERATING THROUGH CONCENTRATIONS ANYMORE            
-%             U = bta*lt(k) - S^2;
-%             
-%             % do EV calculation
-%             m1 = gmma*S + b + lt(k) + (S>Pcrit1)*r;
-%             p5_1 = m1+pct5;
-%             p95_1 = m1+pct95;
-%             m2 = gmma*S + b + lt(k) + (S>Pcrit2)*r;
-%             p5_2 = m2+pct5;
-%             p95_2 = m2+pct95;
-%             pts = [p5_1 m1 p95_1 p5_2 m2 p95_2];
-%             
-%             % likelihood functions and Bayesian updating
-%             Lt1 = exp(-(pts - pts(2)).^2/(2*sgma^2));
-%             Lt2 = exp(-(pts - pts(5)).^2/(2*sgma^2));
-%             piplus = P*Lt1./(P*Lt1 + (1-P)*Lt2);
-%             
-%             %Vpts = interp2(X,Y,squeeze(V(:,:,t+1)),piplus,pts);
-%             if S <= Pt(b1)
-%                 Vpts = coefmat(t,1,:)*[ones(6,1); pts'; piplus'];
-%             elseif S <= Pt(b2)
-%                 Vpts = coefmat(t,2,:)*[ones(6,1); pts'; piplus'];
-%             else
-%                 Vpts = coefmat(t,3,:)*[ones(6,1); pts'; piplus'];
-%             end            
-%             
-%             E1 = .185*Vpts(1)+.63*Vpts(2)+.185*Vpts(3);
-%             E2 = .185*Vpts(4)+.63*Vpts(5)+.185*Vpts(6);
-%             
-%             Vdum(k) = U + dlta*(P*E1+(1-P)*E2);
-%         end
-
         if rand <= p
             ltdum = rand;
             U = bta*ltdum - S^2;
@@ -344,31 +291,23 @@ for m = 1:M
             % calculate value function for t+1 in preparation for EV
             Vprep = diag(coefmat2*varmat);
             EVmult = [P*[.185 .63 .185] (1-P)*[.185 .63 .185]];
-            Vnew = U + dlta*EVmult*Vprep
+            Vnew = U + dlta*EVmult*Vprep;
         else
             ltdum = ltbnd(Vdum==max(Vdum));
-            Vnew = max(Vdum)
+            Vnew = max(Vdum);
+            
+            %results.new(m,t,1) = S;
+            %results.new(m,t,2) = P;
+            %results.new(m,t,3) = ltdum;
+            %results.new(m,t,4) = Vnew;
         end
-        
-        % have new point, now (1) update coefficients, (2) move forward a
-        % timestep
-        
-%         if rand <= p                          % make a random decision
-%             Vnthelp = Vdum(~isnan(Vdum));   % make sure it isn't NaN
-%             Vnthelp2 = randperm(length(Vnthelp));
-%             Vnt = Vnthelp(Vnthelp2(1));
-%         else
-%             Vnt = max(Vdum);
-%         end
-%         ltdum = lt(Vnt==Vdum);
-%         V(S==Pt,P==pii,t) = Vnt;
-%         ltopt(S==Pt,P==pii,t) = ltdum;
-
-
-        
+     
         % update coefficients with Bellman Error method
+        % SOMETHING'S GOING ON WITH UPDATING OF THE INTERCEPT...IT'S
+        % CALCULATING THE NEW POINTS JUST FINE, BUT THE INTERCEPT IS TOO
+        % HIGH
         
-        % calculate error - PROB WANT TO DO THIS BEFORE UPDATING S
+        % calculate error
         whichplane = (S<=Pt(b1)) + 2*((S>Pt(b1))&(S<=Pt(b2)))...
             + 3*(S>Pt(b2));
         error = Vnew - squeeze(coefmat(t,whichplane,:))'*[1; S; P];
@@ -378,10 +317,14 @@ for m = 1:M
         grad(:,:,:) = [-1; -S; -P];
         
         % choose step size
-        alfa = .01;
+        alfa = 1/(m+N);
+        alfamult = 10;  %experiment with changing its size
+        alfa = alfa*alfamult;
         
         % update parameter
         coefmat(t,whichplane,:) = coefmat(t,whichplane,:) - alfa*error*grad;
+        %results.new(m,t,5) = coefmat(t,whichplane,1);
+        %results.new(m,t,6) = coefmat(t,w
         
         % update state and probability
         Sdum = gmma*S + b + ltdum + P*r*(S>Pcrit1) + (1-P)*r*(S>Pcrit2) + randn*sgma;
@@ -397,14 +340,56 @@ for m = 1:M
             S = Sdum;
         end
         P = Pdum;    % update probability estimate
+        if t==1
+            results.new(m,1) = S;
+            results.new(m,2) = P;
+            results.new(m,3) = ltdum;
+            results.new(m,4) = Vnew;
+            results.coefupd(m,:,:) = coefmat(t,:,:);
+        end
     end
 end
 
 %results.ltopt = ltopt;
 results.V = V;
 results.Pt = Pt;
-%results.lt = lt;
+results.lt = lt;
 results.pii = pii;
+results.coefmat = coefmat;
+
+% plot some tests
+f1 = @(x,y) squeeze(coefmat(1,1,:))'*[1; x; y];
+f2 = @(x,y) squeeze(coefmat(1,2,:))'*[1; x; y];
+f3 = @(x,y) squeeze(coefmat(1,3,:))'*[1; x; y];
+figure
+hold on
+ezmesh(f1,[0 Pt(b1) 0 1])
+ezmesh(f2,[Pt(b1) Pt(b2) 0 1])
+ezmesh(f3,[Pt(b2) 1 0 1])
+xlim([0 1])
+zlim([0 7])
+
+f1 = @(x,y) squeeze(coefmatold(1,1,:))'*[1; x; y];
+f2 = @(x,y) squeeze(coefmatold(1,2,:))'*[1; x; y];
+f3 = @(x,y) squeeze(coefmatold(1,3,:))'*[1; x; y];
+figure
+hold on
+ezmesh(f1,[0 Pt(b1) 0 1])
+ezmesh(f2,[Pt(b1) Pt(b2) 0 1])
+ezmesh(f3,[Pt(b2) 1 0 1])
+xlim([0 1])
+zlim([0 4])
+
+figure
+for i = 1:3
+    subplot(1,3,i)
+    hold on
+    plot(squeeze(results.coefupd(:,i,1)))
+    plot(squeeze(results.coefupd(:,i,2)),'r')
+    plot(squeeze(results.coefupd(:,i,3)),'g')
+    legend({'\beta_0' '\beta_1' '\beta_2'})
+    title(['Plane' num2str(i) 'parameters'])
+end
 
 end
         
