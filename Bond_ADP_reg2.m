@@ -6,7 +6,8 @@
 % now it adds the regression too
 
 function results = Bond_ADP_reg2()
-
+% set up initial parameters
+clear
 Pcrit1 = .2; % or .7    % critical threshold
 Pcrit2 = .7;
 gmma = .1;              % decay rate of P concentration
@@ -30,9 +31,9 @@ Nlt = 161;              % no. grid points for P loadings
 Pt = linspace(0,1,NPt);
 pii = linspace(0,1,Npii);
 lt = linspace(0,.8,Nlt);
-T = 15;                 % time span
+T = 10;                 % time span
 
-% sample points to fit initial regression
+%% sample points to fit initial regression
 
 V = zeros(NPt,Npii,T);
 for i = 1:NPt
@@ -107,17 +108,25 @@ for n = 1:N
     end
 end
 
-% %% or just load points from a workspace, if not sampling
-% clear
-% T = 15;
-% load Bond_ADP2
-% V = results.V;
-% Pt = results.Pt;
-% pii = results.pii;
+%% or just load points from a workspace, if not sampling
+load BondADPsearch
+V = results.V;
+Pt = results.Pt;
+pii = results.pii;
 
 % find boundaries of planes
-dVdPt = squeeze(V(2:end,:,1) - V(1:end-1,:,1));
-meandV = abs(mean(dVdPt,2));
+Vhelp = V;
+meandV = zeros(NPt,1);
+Vhelp(~V) = NaN;
+dVhelp = squeeze(Vhelp(2:end,:,1) - Vhelp(1:end-1,:,1));
+for i = 1:NPt-1
+    meandVhelp = dVhelp(i,:);
+    meandV(i) = abs(mean(meandVhelp(~isnan(meandVhelp))));
+end
+
+%dVdPt = squeeze(V(2:end,:,1) - V(1:end-1,:,1));
+%meandV = abs(mean(dVdPt,2));
+
 [~,IX] = sort(meandV,'descend');
 b1 = min([IX(1) IX(2)]);    % lower Pt boundary
 b2 = max([IX(1) IX(2)]);    % upper Pt boundary
@@ -143,18 +152,23 @@ coefmat(end,:,:) = [3 -1 -1; 3 -1 -1; 3 -1 -1];
 
 % calculate regression parameters for each timestep
 for t = 1:T-1
-    Vdum = squeeze(V(:,:,t));
+    Vdum = squeeze(Vhelp(:,:,t));
     V1dum = Vdum(1:b1,:);
     V2dum = Vdum(b1+1:b2,:);
     V3dum = Vdum(b2+1:end,:);
-    V1 = V1dum(:);
-    V2 = V2dum(:);
-    V3 = V3dum(:);
+    V1 = [regvec1 V1dum(:)];
+    V2 = [regvec2 V2dum(:)];
+    V3 = [regvec3 V3dum(:)];
+    
+    % exclude points that haven't been visited
+    V1(any(isnan(V1),2),:) = [];
+    V2(any(isnan(V2),2),:) = [];
+    V3(any(isnan(V3),2),:) = [];
     
     % do regression of 3 planes
-    V1fit = fit(regvec1, V1(:),'poly11');
-    V2fit = fit(regvec2, V2(:),'poly11');
-    V3fit = fit(regvec3 ,V3(:),'poly11');
+    V1fit = fit(V1(:,1:2), V1(:,3),'poly11');
+    V2fit = fit(V2(:,1:2), V2(:,3),'poly11');
+    V3fit = fit(V3(:,1:2) ,V3(:,3),'poly11');
     
     coefmat(t,1,:) = coeffvalues(V1fit);
     coefmat(t,2,:) = coeffvalues(V2fit);
@@ -164,7 +178,7 @@ coefmatold = coefmat;
 
 % plot function values from lookup table
 figure
-surf(Pt,pii,squeeze(V(:,:,1))')
+surf(Pt,pii,squeeze(Vhelp(:,:,1))')
 
 %% ADP stage
 
@@ -351,6 +365,7 @@ results.pii = pii;
 results.coefmat = coefmat;
 results.b1 = b1;
 results.b2 = b2;
+results.coefmatold = coefmatold;
 
 % diagnostic plots
 
