@@ -15,7 +15,7 @@ r = .2;                 % P recycling parameter
 dlta = .99;             % discount factor
 bta = 1.5;              % relative marginal utility of loadings
 sgma = .141421;         % st dev of stochastic shock
-N = 3000; %NOT ENOUGH               % no. samples total, for initial data collection
+N = 5000; %NOT ENOUGH               % no. samples total, for initial data collection
 p = 0;                % probabilit it jumps to a random decision
 
 pct5 = norminv(.05,0,sgma);
@@ -30,13 +30,13 @@ Nlt = 161;              % no. grid points for P loadings
 Pt = linspace(0,1,NPt);
 pii = linspace(0,1,Npii);
 lt = linspace(0,.8,Nlt);
-T = 10;                 % time span
+T = 15;                 % time span
 
 % sample points to fit initial regression
 
 V = zeros(NPt,Npii,T);
 for i = 1:NPt
-    V(i,:,end) = .5*pii-Pt(i);      % find appropriate final condition
+    V(i,:,end) = 3 - pii - Pt(i);      % find appropriate final condition
 end
 ltopt = zeros(NPt,Npii,T);
 [X,Y] = meshgrid(pii,Pt');
@@ -109,6 +109,7 @@ end
 
 % %% or just load points from a workspace, if not sampling
 % clear
+% T = 15;
 % load Bond_ADP2
 % V = results.V;
 % Pt = results.Pt;
@@ -138,7 +139,7 @@ regvec3(:,2) = kron(pii',ones((length(Pt)-b2),1));
 
 % initialize matrix to store regressoin coefficients
 coefmat = zeros(T,3,3); % time, plane, param
-coefmat(end,:,:) = [2 -1 -1.5; 2 -1 -1.5; 2 -1 -1.5];
+coefmat(end,:,:) = [3 -1 -1; 3 -1 -1; 3 -1 -1];
 
 % calculate regression parameters for each timestep
 for t = 1:T-1
@@ -173,8 +174,13 @@ surf(Pt,pii,squeeze(V(:,:,1))')
 % 95th percentile concentration, which are also used to calculate the
 % expected value of the objective function at t+1) on a plane boundary
 
+% JUST GIVE IT THE CORRECT VALUES TO TEST CODE
+%b1 = 9;
+%b2 = 29;
+
 % plane boundaries to test
 testbnd = Pt([b1 b1+1 b2 b2+1]);
+
 
 % number of ADP iterations
 M = 10000;
@@ -200,6 +206,10 @@ for m = 1:M
             (S>Pcrit2)*r + pct5;
             (S>Pcrit2)*r;
             (S>Pcrit2)*r + pct95];
+        
+        % generate matrix of loading rates to test, columns = which testbnd
+        % points, rows = relevant outcomes for EV calculation (mean, 5th,
+        % and 95th percentiles under each model
         ltbnd = kron(ones(6,1),ltbndhelp) - kron(ones(1,4),ltbndhelp2);
         
         % get rid of loading rates outside domain
@@ -215,11 +225,14 @@ for m = 1:M
         [~,index] = unique(ltbnd,'first');
         ltbnd = ltbnd(sort(index));
         
-        % evaluate functions for each lt point
+        % evaluate functions for each loading rate
         Vdum = zeros(1,length(ltbnd));
         for i = 1:length(ltbnd)
+            % current cost function
             U = bta*ltbnd(i) - S^2;
-
+            
+            % find mean, 5th, and 95th percentile concentration values for
+            % next timestep
             m1 = gmma*S + b + ltbnd(i) + (S>Pcrit1)*r;
             p5_1 = m1+pct5;
             p95_1 = m1+pct95;
@@ -227,6 +240,9 @@ for m = 1:M
             p5_2 = m2+pct5;
             p95_2 = m2+pct95;
             pts = [p5_1 m1 p95_1 p5_2 m2 p95_2]';
+            
+            % make a matrix with appropriate regression coefficients for
+            % t+1 concentrations
             coefmat2 = kron((pts<=Pt(b1)),squeeze(coefmat(t+1,1,:))')...
                 + kron((pts<=Pt(b2))&(pts>Pt(b1)),squeeze(coefmat(t+1,2,:))')...
                 + kron((pts>Pt(b2)),squeeze(coefmat(t+1,3,:))');
@@ -239,14 +255,13 @@ for m = 1:M
             % variable matrix
             varmat = [ones(1,6); pts'; piplus'];
             
-            % calculate value function for t+1 in preparation for EV
+            % calculate value function for t+1, then EV
             Vprep = diag(coefmat2*varmat);
             EVmult = [P*[.185 .63 .185] (1-P)*[.185 .63 .185]];
             Vdum(i) = U + dlta*EVmult*Vprep;
         end
         
-        % explore parameter space sometimes, instead of taking optimal
-        % value
+        % sometimes use a random loading rate instead of the optimal one
         if rand <= p
             ltdum = rand;
             U = bta*ltdum - S^2;
@@ -334,6 +349,8 @@ results.Pt = Pt;
 results.lt = lt;
 results.pii = pii;
 results.coefmat = coefmat;
+results.b1 = b1;
+results.b2 = b2;
 
 % diagnostic plots
 
@@ -348,6 +365,8 @@ ezmesh(f2,[Pt(b1) Pt(b2) 0 1])
 ezmesh(f3,[Pt(b2) 1 0 1])
 xlim([0 1])
 zlim([0 7])
+xlabel('Pt')
+ylabel('pii')
 
 % initial regression planes (regressed from lookup table)
 f1 = @(x,y) squeeze(coefmatold(1,1,:))'*[1; x; y];
@@ -360,6 +379,8 @@ ezmesh(f2,[Pt(b1) Pt(b2) 0 1])
 ezmesh(f3,[Pt(b2) 1 0 1])
 xlim([0 1])
 zlim([0 4])
+xlabel('Pt')
+ylabel('pii')
 
 % parameter estimates as a function of iteration
 figure
