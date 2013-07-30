@@ -229,12 +229,12 @@ for m = 1:M
         
         % get rid of loading rates outside domain
         ltbnd(ltbnd<0) = NaN;
-        ltbnd(ltbnd>1) = NaN;
+        ltbnd(ltbnd>lt(end)) = NaN;
         ltbnd = ltbnd(:);
         ltbnd = ltbnd(~isnan(ltbnd));
         
         % also test loading rates of 0 and 1
-        ltbnd = [ltbnd; 0; 1];
+        ltbnd = [ltbnd; 0; lt(end)];
         
         % get rid of duplicates
         [~,index] = unique(ltbnd,'first');
