@@ -109,7 +109,7 @@ for n = 1:N
 end
 
 %% or just load points from a workspace, if not sampling
-load BondADPsearch
+load BondADP10k
 V = results.V;
 Pt = results.Pt;
 pii = results.pii;
@@ -197,8 +197,9 @@ testbnd = Pt([b1 b1+1 b2 b2+1]);
 
 
 % number of ADP iterations
-M = 10000;
+M = 50000;
 for m = 1:M
+    m
     % start somewhere random  
     randdum = randperm(NPt);
     S = Pt(randdum(1));
@@ -337,6 +338,8 @@ for m = 1:M
             results.new(m,2) = P;
             results.new(m,3) = ltdum;
             results.new(m,4) = Vnew;
+            results.new(m,5) = error;
+            
             results.coefupd(m,:,:) = coefmat(t,:,:);
         end
 
@@ -367,7 +370,10 @@ results.b1 = b1;
 results.b2 = b2;
 results.coefmatold = coefmatold;
 
-% diagnostic plots
+%% diagnostic plots
+
+%coefmat = results.coefmat;
+%coefmat
 
 % final regression planes
 f1 = @(x,y) squeeze(coefmat(1,1,:))'*[1; x; y];
@@ -379,7 +385,7 @@ ezmesh(f1,[0 Pt(b1) 0 1])
 ezmesh(f2,[Pt(b1) Pt(b2) 0 1])
 ezmesh(f3,[Pt(b2) 1 0 1])
 xlim([0 1])
-zlim([0 7])
+zlim([0 5])
 xlabel('Pt')
 ylabel('pii')
 
@@ -393,7 +399,7 @@ ezmesh(f1,[0 Pt(b1) 0 1])
 ezmesh(f2,[Pt(b1) Pt(b2) 0 1])
 ezmesh(f3,[Pt(b2) 1 0 1])
 xlim([0 1])
-zlim([0 4])
+zlim([0 5])
 xlabel('Pt')
 ylabel('pii')
 
@@ -402,9 +408,9 @@ figure
 for i = 1:3
     subplot(1,3,i)
     hold on
-    plot(squeeze(results.coefupd(:,i,1)))
-    plot(squeeze(results.coefupd(:,i,2)),'r')
-    plot(squeeze(results.coefupd(:,i,3)),'g')
+    plot(squeeze(results.coefupd(10000:end,i,1)))
+    plot(squeeze(results.coefupd(10000:end,i,2)),'r')
+    plot(squeeze(results.coefupd(10000:end,i,3)),'g')
     legend({'\beta_0' '\beta_1' '\beta_2'})
     title(['Plane' num2str(i) 'parameters'])
 end
