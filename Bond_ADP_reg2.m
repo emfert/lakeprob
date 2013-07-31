@@ -179,6 +179,12 @@ coefmatold = coefmat;
 % plot function values from lookup table
 figure
 surf(Pt,pii,squeeze(Vhelp(:,:,1))')
+view(142.5, 30)
+xlabel('Concentration')
+ylabel('Probability')
+zlabel('Ob fun value')
+title('Lookup table values')
+saveas(gcf,'../../../Desktop/lakeproblem/lookup0','epsc')
 
 %% ADP stage
 
@@ -197,7 +203,7 @@ testbnd = Pt([b1 b1+1 b2 b2+1]);
 
 
 % number of ADP iterations
-M = 50000;
+M = 30000;
 for m = 1:M
     m
     % start somewhere random  
@@ -308,11 +314,6 @@ for m = 1:M
             ltdum = ltbnd(Vdum==max(Vdum));
             Vnew = max(Vdum);
         end
-     
-        % update coefficients with Bellman Error method
-        % SOMETHING'S GOING ON WITH UPDATING OF THE INTERCEPT...IT'S
-        % CALCULATING THE NEW POINTS JUST FINE, BUT THE INTERCEPT IS TOO
-        % HIGH
         
         % figure out which regression plane you're on and calculate error
         whichplane = (S<=Pt(b1)) + 2*((S>Pt(b1))&(S<=Pt(b2)))...
@@ -386,8 +387,12 @@ ezmesh(f2,[Pt(b1) Pt(b2) 0 1])
 ezmesh(f3,[Pt(b2) 1 0 1])
 xlim([0 1])
 zlim([0 5])
-xlabel('Pt')
-ylabel('pii')
+xlabel('Concentration')
+ylabel('Probability')
+zlabel('Ob fun value')
+title('Final value function')
+view(142.5, 30)
+%saveas(gcf,'../../../Desktop/lakeproblem/finalval0','epsc')
 
 % initial regression planes (regressed from lookup table)
 f1 = @(x,y) squeeze(coefmatold(1,1,:))'*[1; x; y];
@@ -400,20 +405,33 @@ ezmesh(f2,[Pt(b1) Pt(b2) 0 1])
 ezmesh(f3,[Pt(b2) 1 0 1])
 xlim([0 1])
 zlim([0 5])
-xlabel('Pt')
-ylabel('pii')
+xlabel('Concentration')
+ylabel('Probability')
+zlabel('Ob fun value')
+title('Initial value function')
+view(142.5, 30)
+%saveas(gcf,'../../../Desktop/lakeproblem/initval0','epsc')
 
 % parameter estimates as a function of iteration
 figure
 for i = 1:3
     subplot(1,3,i)
     hold on
-    plot(squeeze(results.coefupd(10000:end,i,1)))
-    plot(squeeze(results.coefupd(10000:end,i,2)),'r')
-    plot(squeeze(results.coefupd(10000:end,i,3)),'g')
-    legend({'\beta_0' '\beta_1' '\beta_2'})
+    plot(squeeze(results.coefupd(:,i,1)))
+    plot(squeeze(results.coefupd(:,i,2)),'r')
+    plot(squeeze(results.coefupd(:,i,3)),'g')
+    legend({'\beta_0' '\beta_1' '\beta_2'},'Location','East')
     title(['Plane' num2str(i) 'parameters'])
 end
+%saveas(gcf,'../../../Desktop/lakeproblem/params0','epsc')
+
+% optimal loading rate
+figure
+scatter3(results.new(:,1), results.new(:,2), results.new(:,3))
+xlabel('Concentration')
+ylabel('Probability')
+zlabel('Optimal loading rate')
+view(142.5,30)
 
 end
         
