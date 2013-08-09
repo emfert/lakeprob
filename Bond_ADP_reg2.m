@@ -1,5 +1,6 @@
 % This implements the lake problem as done in the Lempert paper, using a
-% linear model
+% linear model. Unlike previous versions, it keeps track of the previous
+% loading rate as a state.
 
 function results = Bond_ADP_reg2()
 % set up initial parameters
@@ -16,14 +17,14 @@ sgma = .04;             % st dev of stochastic shock
 bbeta = 10;             % eutrophic cost
 phi = 10;               % emissions reduction cost constant
 
-N = 2000; %NOT ENOUGH               % no. samples total, for initial data collection
-p = 0;                % probabilit it jumps to a random decision
+N = 100000; %NOT ENOUGH               % no. samples total, for initial data collection
+p = 5;                % probabilit it jumps to a random decision
 
 pct5 = norminv(.05,0,sgma);
 pct95 = norminv(.95,0,sgma);
 
-NPt = 10;%41;               % no. grid points for Pt (concentration)
-Npii = 10;%41;              % no. grid points for pii (probabilities)
+NPt = 20;%41;               % no. grid points for Pt (concentration)
+Npii = 20;%41;              % no. grid points for pii (probabilities)
 Nlt = 20;%161;              % no. grid points for P loadings
 %Hn = 16;                % Hermite nodes and weights
 %eps = .001;             % Value function error tolerance
@@ -32,16 +33,24 @@ Pt = linspace(0,1,NPt);
 pii = linspace(0,1,Npii);
 %pii = repmat(pii_help,length(Pcrit),1);
 lt = linspace(0,.8,Nlt);
-T = 6;                 % time span
+T = 10;                 % time span
 
 %% sample points to fit initial regression
 
-V = ones([NPt Npii*ones(1,length(Pcrit)-1) T]);
+V = ones([Nlt NPt Npii*ones(1,length(Pcrit)-1) T]);
 %for i = 1:NPt
 %    V(i,:,end) = 3 - pii - Pt(i);      % find appropriate final condition
 %end
-ltopt = zeros([NPt Npii*ones(1,length(Pcrit)-1) T]);
-%[X,Y] = meshgrid(pii,Pt');
+% HARD CODE IN PROBABILITY DIMENSIONALITY
+% for i = 1:Nlt
+%     for j = 1:NPt
+%         for k = 1:Npii
+%             V(i,j,k) = 3 - lt(i) - Pt(j) - pii(k);
+%         end
+%     end
+% end
+
+ltopt = zeros([Nlt NPt Npii*ones(1,length(Pcrit)-1) T]);
 
 % generate lookup table for first N samples
 for n = 1:N
@@ -49,6 +58,10 @@ for n = 1:N
     % initial state variables
     randdum = randperm(NPt);
     S = Pt(randdum(1));
+    
+    %rdum2 = randperm(Nlt);
+    %lt_prev = lt(rdum2(1));
+    lt_prev = lt(1);
     
     P_help = randperm(length(Pcrit)-1);
     dif = 0;
@@ -63,27 +76,13 @@ for n = 1:N
     end
     P(end) = 1-dif;
     P_ind(end) = find(abs(P(end)-pii)==min(abs(P(end)-pii)));
-    
-    %randdum2 = randperm(Npii);
-    %P = pii(randdum2(1));
-    
-    lt_prev = 0;        % optimal loading from prevoius timestep
-    
+        
     for t = 1:T-1
         Vdum = zeros(1,Nlt);
         for k = 1:Nlt               % iterate through control space                        
             % need to do EV with current prob dist over Pcrits, this won't
             % run as is
             U = alphaa*lt(k) - bbeta*(S>Pcrit)*P' - phi*(lt_prev-lt(k))*(lt_prev>lt(k));
-            
-            % do EV calculation
-            %m1 = B*S + b + lt(k) + (S>Pcrit1)*r;
-            %p5_1 = m1+pct5;
-            %p95_1 = m1+pct95;
-            %m2 = B*S + b + lt(k) + (S>Pcrit2)*r;
-            %p5_2 = m2+pct5;
-            %p95_2 = m2+pct95;
-            %pts = [p5_1 m1 p95_1 p5_2 m2 p95_2];
             
             % rows are 5th, mean, 95th percentile next-period
             % concentrations, columns correspond to each threshold
@@ -92,10 +91,6 @@ for n = 1:N
             pts(1,:) = pts(2,:) + pct5;
             pts(3,:) = pts(2,:) + pct95;
                         
-            % likelihood functions and Bayesian updating
-            %Lt1 = exp(-(pts - pts(2)).^2/(2*sgma^2));
-            %Lt2 = exp(-(pts - pts(5)).^2/(2*sgma^2));
-            %Lt = exp(-(pts - kron(ones(3,1),pts(2,:))).^2/(2*sgma^2));
             % Lt(:,:,i) is the likelihood of each point in pts given model
             % i
             Lt = zeros(3,length(Pcrit),length(Pcrit));
@@ -103,7 +98,6 @@ for n = 1:N
                 Lt(:,:,i) = exp(-(pts - pts(2,i)).^2/(2*sgma^2));
             end
             
-            %piplus = P*Lt1./(P*Lt1 + (1-P)*Lt2);
             % make matrix that's no. test points for calculating EV for
             % each model : number of models to test: number of predictors
             piplus = zeros(3,length(Pcrit),length(Pcrit));
@@ -112,11 +106,6 @@ for n = 1:N
                 pi_help2 = kron(ones(1,length(Pcrit)),pi_help);
                 piplus(:,i,:) = (squeeze(Lt(:,i,:)).*kron(ones(3,1),P))./pi_help2;
             end
-            
-            % do interpolation for Vtp1 (for lookup table)
-            %Vpts = interp2(X,Y,squeeze(V(:,:,t+1)),piplus,pts);
-            %[~, piplus_round_ind] = max(piplus - k);
-            %[~, pts_round_ind] = ;
             
             % make matrix of lookup-table indices
             piplus_ind_help = zeros(3,length(Pcrit),length(Pcrit),Npii);
@@ -133,13 +122,10 @@ for n = 1:N
                 % HAVE TO HARD CODE THIS
                 for j = 1:length(Pcrit)
                     %Vpts(i,j) = squeeze(V(Pt==S,piplus_ind(i,j,1),piplus_ind(i,j,2),t));
-                    Vpts(i,j) = squeeze(V(Pt==S,piplus_ind(i,j,1),t+1));
+                    Vpts(i,j) = squeeze(V(lt==lt_prev,Pt==S,piplus_ind(i,j,1),t+1));
                 end
             end
-            
-            
-            %E1 = .185*Vpts(1)+.63*Vpts(2)+.185*Vpts(3);
-            %E2 = .185*Vpts(4)+.63*Vpts(5)+.185*Vpts(6);
+
             % expected value under each of Pcrit models
             E = [.185 .63 .185]*Vpts;
             
@@ -159,36 +145,31 @@ for n = 1:N
         % HARD CODE
         %V(Pt==S,P_ind(1),P_ind(2),t) = Vnt;
         %ltopt(Pt==S,P_ind(1),P_ind(2),t) = ltdum;        
-        V(Pt==S,P_ind(1),t) = Vnt;
-        ltopt(Pt==S,P_ind(1),t) = ltdum;
-        lt_prev = ltdum;
-        
+        V(lt==lt_prev,Pt==S,P_ind(1),t) = Vnt;
+        ltopt(lt==lt_prev,Pt==S,P_ind(1),t) = ltdum;
+                
         % calculate (random) state and probability estimate for next
         % timestep
+        
+        lt_prev = ltdum;
         
         p_log = zeros(length(Pcrit),1);
         for i = 1:length(Pcrit)
             p_log(i) = S>Pcrit(i);
         end
         
-        %Sdum = B*S + b + ltdum + P*r*(S>Pcrit1) + (1-P)*r*(S>Pcrit2) + randn*sgma;       
         Sdum = B*S + b + ltdum + r*P*p_log + randn*sgma;
         
-        %Lt1b = exp(-(Sdum - (B*S + b + ltdum + (S>Pcrit1)*r))^2/(2*sgma^2));
-        %Lt2b = exp(-(Sdum - (B*S + b + ltdum + (S>Pcrit2)*r))^2/(2*sgma^2));
         Ltb = exp(-(Sdum - (B*S + b + ltdum + r*p_log)).^2/(2*sgma^2));
         
-        %Pdum = P*Lt1b/(P*Lt1b + (1-P)*Lt2b);
         Pdum = P.*Ltb'/(P*Ltb);
         if Sdum < 0     % update concentration for next timestep
             S = 0;
         elseif Sdum > 1
             S = 1;
         else
-            %S = interp1(Pt,Pt,Sdum,'nearest');
             S = Pt(abs(Sdum-Pt)==min(abs(Sdum-Pt)));
         end
-        %P = interp1(pii,pii,Pdum,'nearest');    % update probability estimate
         for i = 1:length(Pcrit)
             P(i) = pii(abs(Pdum(i)-pii)==min(abs(Pdum(i)-pii)));
         end
@@ -200,24 +181,6 @@ load BondADP10k
 V = results.V;
 Pt = results.Pt;
 pii = results.pii;
-
-% % find boundaries of planes
-% OR CAN WE A PRIORI SAY THEY'RE 
-% Vhelp = V;
-% meandV = zeros(NPt,1);
-% Vhelp(~V) = NaN;
-% dVhelp = squeeze(Vhelp(2:end,:,1) - Vhelp(1:end-1,:,1));
-% for i = 1:NPt-1
-%     meandVhelp = dVhelp(i,:);
-%     meandV(i) = abs(mean(meandVhelp(~isnan(meandVhelp))));
-% end
-
-%dVdPt = squeeze(V(2:end,:,1) - V(1:end-1,:,1));
-%meandV = abs(mean(dVdPt,2));
-
-% [~,IX] = sort(meandV,'descend');
-% b1 = min([IX(1) IX(2)]);    % lower Pt boundary
-% b2 = max([IX(1) IX(2)]);    % upper Pt boundary
 
 bnds = zeros(1,length(Pcrit));
 for i = 1:length(Pcrit)
