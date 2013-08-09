@@ -12,19 +12,19 @@ b = .1;                 % natural baseline loading
 r = .25;                % P recycling parameter
 dlta = 1/1.03;          % discount factor
 alphaa = 1;             % relative marginal utility of loadings
-sgma = .05;             % st dev of stochastic shock
+sgma = .04;             % st dev of stochastic shock
 bbeta = 10;             % eutrophic cost
 phi = 10;               % emissions reduction cost constant
 
-N = 500; %NOT ENOUGH               % no. samples total, for initial data collection
+N = 2000; %NOT ENOUGH               % no. samples total, for initial data collection
 p = 0;                % probabilit it jumps to a random decision
 
 pct5 = norminv(.05,0,sgma);
 pct95 = norminv(.95,0,sgma);
 
-NPt = 41;               % no. grid points for Pt (concentration)
-Npii = 41;              % no. grid points for pii (probabilities)
-Nlt = 161;              % no. grid points for P loadings
+NPt = 10;%41;               % no. grid points for Pt (concentration)
+Npii = 10;%41;              % no. grid points for pii (probabilities)
+Nlt = 20;%161;              % no. grid points for P loadings
 %Hn = 16;                % Hermite nodes and weights
 %eps = .001;             % Value function error tolerance
 
@@ -32,15 +32,15 @@ Pt = linspace(0,1,NPt);
 pii = linspace(0,1,Npii);
 %pii = repmat(pii_help,length(Pcrit),1);
 lt = linspace(0,.8,Nlt);
-T = 10;                 % time span
+T = 6;                 % time span
 
 %% sample points to fit initial regression
 
-V = zeros([NPt Npii*ones(1,length(Pcrit)-1) T]);
+V = ones([NPt Npii*ones(1,length(Pcrit)-1) T]);
 %for i = 1:NPt
 %    V(i,:,end) = 3 - pii - Pt(i);      % find appropriate final condition
 %end
-ltopt = V;
+ltopt = zeros([NPt Npii*ones(1,length(Pcrit)-1) T]);
 %[X,Y] = meshgrid(pii,Pt');
 
 % generate lookup table for first N samples
@@ -133,7 +133,7 @@ for n = 1:N
                 % HAVE TO HARD CODE THIS
                 for j = 1:length(Pcrit)
                     %Vpts(i,j) = squeeze(V(Pt==S,piplus_ind(i,j,1),piplus_ind(i,j,2),t));
-                    Vpts(i,j) = squeeze(V(Pt==S,piplus_ind(i,j,1),t));
+                    Vpts(i,j) = squeeze(V(Pt==S,piplus_ind(i,j,1),t+1));
                 end
             end
             
