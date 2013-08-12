@@ -55,7 +55,7 @@ for i = 1:length(Xcrit)
     U(:,i,1) = alphaa*L0 - bbeta*(X0>Xcrit(i));
 end
 
-rng(1) % seed RNG
+rng(2) % seed RNG
 % do Monte Carlo sim
 
 for i = 1:N % for each model
