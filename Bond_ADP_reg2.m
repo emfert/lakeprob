@@ -5,9 +5,7 @@
 function results = Bond_ADP_reg2()
 % set up initial parameters
 clear
-%Pcrit1 = .2; % or .7    % critical threshold
-%Pcrit2 = .7;
-Pcrit = [.2 .7];
+Pcrit = [.3 .5 .8];
 B = .2;              % decay rate of P concentration (B in lempert paper)
 b = .1;                 % natural baseline loading
 r = .25;                % P recycling parameter
@@ -17,7 +15,7 @@ sgma = .04;             % st dev of stochastic shock
 bbeta = 10;             % eutrophic cost
 phi = 10;               % emissions reduction cost constant
 
-N = 100000;             % no. samples total, for initial data collection
+N = 100;             % no. samples total, for initial data collection
 p = 5;                  % probabilit it jumps to a random decision
 
 pct5 = norminv(.05,0,sgma);
@@ -26,12 +24,9 @@ pct95 = norminv(.95,0,sgma);
 NPt = 20;%41;               % no. grid points for Pt (concentration)
 Npii = 20;%41;              % no. grid points for pii (probabilities)
 Nlt = 20;%161;              % no. grid points for P loadings
-%Hn = 16;                % Hermite nodes and weights
-%eps = .001;             % Value function error tolerance
 
 Pt = linspace(0,1,NPt);
 pii = linspace(0,1,Npii);
-%pii = repmat(pii_help,length(Pcrit),1);
 lt = linspace(0,.8,Nlt);
 T = 10;                 % time span
 
@@ -119,10 +114,14 @@ for n = 1:N
             end
             [~, piplus_ind] = min(abs(piplus_ind_help),[],4);
             for i = 1:3
-                % HAVE TO HARD CODE THIS
+                % HAVE TO HARD CODE THIS - TRIED NOT TO
                 for j = 1:length(Pcrit)
-                    %Vpts(i,j) = squeeze(V(Pt==S,piplus_ind(i,j,1),piplus_ind(i,j,2),t));
-                    Vpts(i,j) = squeeze(V(lt==lt_prev,Pt==S,piplus_ind(i,j,1),t+1));
+                    pi_dum = [];
+                    for jj = 1:length(Pcrit)-1
+                        pi_dum = [pi_dum 'piplus_ind(i,j,' num2str(jj) '),'];
+                    end
+                    %Vpts(i,j) = squeeze(V(lt==lt_prev,Pt==S,piplus_ind(i,j,1),t+1));
+                    Vpts(i,j) = eval(['squeeze(V(lt==lt_prev,Pt==S,' pi_dum 't+1))']);
                 end
             end
 
@@ -142,11 +141,15 @@ for n = 1:N
         % put decisions and function values in lookup table
         ltdum = lt(Vnt==Vdum);
         
-        % HARD CODE
-        %V(Pt==S,P_ind(1),P_ind(2),t) = Vnt;
-        %ltopt(Pt==S,P_ind(1),P_ind(2),t) = ltdum;        
-        V(lt==lt_prev,Pt==S,P_ind(1),t) = Vnt;
-        ltopt(lt==lt_prev,Pt==S,P_ind(1),t) = ltdum;
+        % HARD CODE - TEST!!       
+        % V(lt==lt_prev,Pt==S,P_ind(1),t) = Vnt;
+        % ltopt(lt==lt_prev,Pt==S,P_ind(1),t) = ltdum;        
+        P_ind_dum = [];
+        for i = 1:length(Pcrit)-1
+            P_ind_dum = [P_ind_dum 'P_ind(' num2str(i) '),'];
+        end
+        eval(['V(lt==lt_prev,Pt==S,' P_ind_dum 't) = Vnt']);
+        eval(['ltopt(lt==lt_prev,Pt==S,' P_ind_dum 't) = ltdum']);
                 
         % calculate (random) state and probability estimate for next
         % timestep
@@ -187,65 +190,80 @@ for i = 1:length(Pcrit)
     bnds(i) = find(abs(Pcrit(i)-pii)==min(abs(Pcrit(i)-pii)));
 end
 
-b1 = bnds(1);
-b2 = bnds(2);
+% b1 = bnds(1);
+% b2 = bnds(2);
 
-% do initial regression RESUME HERE!!!
 % HARD CODE THIS INITIALLY FOR NUMBER OF PLANES
 % set up regression vectors for 3 planes
-regvec1 = ones(b1*length(pii)*Nlt,4);
-regvec1(:,2) = kron(ones(length(pii)*b1,1),lt');
-regvec1(:,3) = kron(ones(length(pii),1),kron(Pt(1:b1)',ones(Nlt,1)));
-regvec1(:,4) = kron(pii',ones(b1*Nlt,1));
+% !!!! STILL NEED TO FIX REGRESSION VECTORS FOR MORE PROB DIMENSIONS
+bnds = [0 bnds NPt];
+for i = 1:length(bnds)-1
+%     regvecdum = ones((bnds(i+1)-bnds(i))*Npii*Nlt,length(Pcrit)+2);
+%     regvecdum(:,2) = kron(ones(Npii*(bnds(i+1)-bnds(i)),1),lt');
+%     regvecdum(:,3) = kron(ones(Npii,1),kron(Pt(bnds(i)+1:bnds(i+1))',ones(Nlt,1)));
+%     regvecdum(:,4:end) = kron(pii',ones((bnds(i+1)-bnds(i))*Nlt,length(Pcrit)-1));
+    regvecdum = ones((bnds(i+1)-bnds(i))*Npii^(length(Pcrit)-1)*Nlt,length(Pcrit)+2);
+    regvecdum(:,2) = kron(ones(Npii^(length(Pcrit)-1)*(bnds(i+1)-bnds(i)),1),lt');
+    regvecdum(:,3) = kron(ones(Npii^(length(Pcrit)-1),1),kron(Pt(bnds(i)+1:bnds(i+1))',ones(Nlt,1)));
+    for j = 4:length(Pcrit)+2
+        regvecdum(:,j) = kron(ones(Npii^(length(Pcrit)-j+2),1), kron(pii',ones((bnds(i+1)-bnds(i))*Nlt*Npii^(j-4),1)));
+    end
+    assignin('base',['regvec' num2str(i)],regvecdum);
+end
 
-regvec2 = ones((b2-b1)*length(pii)*Nlt,4);
-regvec2(:,2) = kron(ones(length(pii)*(b2-b1),1),lt');
-regvec2(:,3) = kron(ones(length(pii),1),kron(Pt(b1+1:b2)',ones(Nlt,1)));
-regvec2(:,4) = kron(pii',ones((b2-b1)*Nlt,1));
-
-regvec3 = ones((length(Pt)-b2)*length(pii)*Nlt,4);
-regvec3(:,2) = kron(ones(length(pii)*(NPt-b2),1),lt');
-regvec3(:,3) = kron(ones(length(pii),1),kron(Pt(b2+1:end)',ones(Nlt,1)));
-regvec3(:,4) = kron(pii',ones((length(Pt)-b2)*Nlt,1));
+% regvec1 = ones(b1*Npii*Nlt,4);
+% regvec1(:,2) = kron(ones(Npii*b1,1),lt');
+% regvec1(:,3) = kron(ones(Npii,1),kron(Pt(1:b1)',ones(Nlt,1)));
+% regvec1(:,4) = kron(pii',ones(b1*Nlt,1));
+% 
+% regvec2 = ones((b2-b1)*Npii*Nlt,4);
+% regvec2(:,2) = kron(ones(Npii*(b2-b1),1),lt');
+% regvec2(:,3) = kron(ones(Npii,1),kron(Pt(b1+1:b2)',ones(Nlt,1)));
+% regvec2(:,4) = kron(pii',ones((b2-b1)*Nlt,1));
+% 
+% regvec3 = ones((length(Pt)-b2)*Npii*Nlt,4);
+% regvec3(:,2) = kron(ones(Npii*(NPt-b2),1),lt');
+% regvec3(:,3) = kron(ones(Npii,1),kron(Pt(b2+1:end)',ones(Nlt,1)));
+% regvec3(:,4) = kron(pii',ones((length(Pt)-b2)*Nlt,1));
 
 % initialize matrix to store regressoin coefficients
-coefmat = zeros(T,3,4); % time, plane, param
-coefmat(end,:,:) = [3 -1 -1 -1; 3 -1 -1 -1; 3 -1 -1 -1];
+coefmat = zeros(T,3,length(Pcrit)+2); % time, plane, param
+coefmat(end,:,:) = [3 -1 -1 -1*ones(1,length(Pcrit)-1); 3 -1 -1 -1*ones(1,length(Pcrit)-1); 3 -1 -1 -1*ones(1,length(Pcrit)-1)];
 
 % calculate regression parameters for each timestep
 for t = 1:T-1
-    Vdum = squeeze(V(:,:,:,t));
-    V1dum = Vdum(:,1:b1,:);
-    V2dum = Vdum(:,b1+1:b2,:);
-    V3dum = Vdum(:,b2+1:end,:);
-    V1 = V1dum(:);
-    V2 = V2dum(:);
-    V3 = V3dum(:);
+    Vdumhelp = [];
+    for i = 1:length(Pcrit)-1
+        Vdumhelp = [Vdumhelp ':,'];
+    end
+    Vdum = squeeze(eval(['V(:,:,' Vdumhelp 't)']));    % extract lookup table values for V
+%     V1dum = Vdum(:,1:b1,:);
+%     V2dum = Vdum(:,b1+1:b2,:);
+%     V3dum = Vdum(:,b2+1:end,:);
+%     V1 = V1dum(:);
+%     V2 = V2dum(:);
+%     V3 = V3dum(:);
+%     
+%     % exclude points that haven't been visited
+%     V1(V1==1) = NaN;
+%     V2(V2==1) = NaN;
+%     V3(V3==1) = NaN;
     
-    % exclude points that haven't been visited
-    %V1(any(isnan(V1),2),:) = [];
-    %V2(any(isnan(V2),2),:) = [];
-    %V3(any(isnan(V3),2),:) = [];
-    
-    V1(V1==1) = NaN;
-    V2(V2==1) = NaN;
-    V3(V3==1) = NaN;
+    for i = 1:length(bnds)-1
+        Vdum2 = Vdum(:,bnds(i)+1:bnds(i+1),:);
+        Vdum3 = Vdum2(:);
+        Vdum3(Vdum3==1) = NaN;
+        coefmat(t,i,:) = regress(Vdum3,eval(['regvec' num2str(i)]));
+    end
     
     % do regression of 3 planes
-    %V1fit = fit(V1(:,1:2), V1(:,3),'poly11');
-    %V2fit = fit(V2(:,1:2), V2(:,3),'poly11');
-    %V3fit = fit(V3(:,1:2) ,V3(:,3),'poly11');
-    
-    %coefmat(t,1,:) = coeffvalues(V1fit);
-    %coefmat(t,2,:) = coeffvalues(V2fit);
-    %coefmat(t,3,:) = coeffvalues(V3fit);
-    b1h = regress(V1,regvec1);
-    b2h = regress(V2,regvec2);
-    b3h = regress(V3,regvec3);
-    
-    coefmat(t,1,:) = b1h;
-    coefmat(t,2,:) = b2h;
-    coefmat(t,3,:) = b3h;
+%     b1h = regress(V1,regvec1);
+%     b2h = regress(V2,regvec2);
+%     b3h = regress(V3,regvec3);
+%     
+%     coefmat(t,1,:) = b1h;
+%     coefmat(t,2,:) = b2h;
+%     coefmat(t,3,:) = b3h;
     
 end
 coefmatold = coefmat;
@@ -262,14 +280,14 @@ coefmatold = coefmat;
 
 %% ADP stage
 
-% number of ADP iterations
-M = 100;
+M = 100;                % number of ADP iterations
+bnds(1) = 1;
+
 for m = 1:M
     m
-    % start somewhere random  
-    S = rand*Pt(end);
+    S = rand*Pt(end);   % initial random concentration
     
-    dif = 0;
+    dif = 0;            % initial random probability distribution
     P = zeros(1,length(Pcrit));
     for i = 1:length(Pcrit)-1
         P(i) = rand*(1-dif);
@@ -277,10 +295,7 @@ for m = 1:M
     end
     P(end) = 1-dif;
     
-    lt_prev = 0;
-    
-    % sample path of concentrations, probabilities, and objective function
-    % values for each timestep
+    lt_prev = 0;        % initial previous loading rate
     
     for t = 1:T-1
         
@@ -304,7 +319,7 @@ for m = 1:M
             end
             
             % make matrix that's no. test points for calculating EV for
-            % each model : number of models to test: number of predictors
+            % each model X number of models to test X number of predictors
             piplus = zeros(3,length(Pcrit),length(Pcrit));
             for j = 1:length(Pcrit)
                 pi_help = squeeze(Lt(:,j,:))*P';
@@ -317,24 +332,26 @@ for m = 1:M
             coefmat2 = zeros(3,length(Pcrit),length(Pcrit)+2);
             for j = 1:3
                 for k = 1:length(Pcrit)
-                    coefmat2(j,k,:) = (pts(j,k)<=Pt(b1))*squeeze(coefmat(t+1,1,:))...
-                        + (pts(j,k)<=Pt(b2))&(pts(j,k)>Pt(b1))*squeeze(coefmat(t+1,2,:))...
-                        + (pts(j,k)>Pt(b2))*squeeze(coefmat(t+1,3,:));
+%                     coefmat2(j,k,:) = (pts(j,k)<=Pt(b1))*squeeze(coefmat(t+1,1,:))...
+%                         + (pts(j,k)<=Pt(b2))&(pts(j,k)>Pt(b1))*squeeze(coefmat(t+1,2,:))...
+%                         + (pts(j,k)>Pt(b2))*squeeze(coefmat(t+1,3,:));
+                    for jj = 1:length(bnds)-1
+                        if (pts(j,k)>Pt(bnds(jj)))&&(pts(j,k)<=Pt(bnds(jj+1)))
+                            coefmat2(j,k,:) = squeeze(coefmat(t+1,jj,:));
+                        end
+                    end
                 end
             end
                         
-            % variable matrix
+            % calculate value function for t+1
             Vtp1 = zeros(size(pts));
             for j = 1:3
                 for k = 1:length(Pcrit)
                     Vtp1(j,k) = squeeze(coefmat2(j,k,:))'*[1 lt_prev S P(1:end-1)]';
                 end
             end
-            
-            %varmat = [ones(1,length(Pcrit)*3); pts(:); piplus(:)];
-            
-            % calculate value function for t+1, then EV
-            %Vprep = diag(coefmat2*varmat);
+                        
+            % calculate EV for t+1
             EVmult = zeros(3,length(Pcrit));
             for j = 1:length(Pcrit)
                 EVmult(:,j) = P(j)*[.185 .63 .185]';
@@ -348,55 +365,15 @@ for m = 1:M
             randdum2 = randperm(Nlt);
             ltdum = lt(randdum2(1));
             Vnew = Vdum(randdum2(1));
-            
-%             ltdum = rand;
-%             U = alphaa*lt(k) - bbeta*(S>Pcrit)*P' - phi*(lt_prev-lt(k))*(lt_prev>lt(k));
-%             
-%             % rows are 5th, mean, 95th percentile next-period
-%             % concentrations, columns correspond to each threshold
-%             pts = zeros(3,length(Pcrit));
-%             pts(2,:) = B*S + b + lt(k) + (S>Pcrit);
-%             pts(1,:) = pts(2,:) + pct5;
-%             pts(3,:) = pts(2,:) + pct95;
-%                         
-%             % Lt(:,:,i) is the likelihood of each point in pts given model
-%             % i
-%             Lt = zeros(3,length(Pcrit),length(Pcrit));
-%             for j = 1:length(Pcrit)
-%                 Lt(:,:,j) = exp(-(pts - pts(2,j)).^2/(2*sgma^2));
-%             end
-%             
-%             % make matrix that's no. test points for calculating EV for
-%             % each model : number of models to test: number of predictors
-%             piplus = zeros(3,length(Pcrit),length(Pcrit));
-%             for j = 1:length(Pcrit)
-%                 pi_help = squeeze(Lt(:,j,:))*P';
-%                 pi_help2 = kron(ones(1,length(Pcrit)),pi_help);
-%                 piplus(:,j,:) = (squeeze(Lt(:,j,:)).*kron(ones(3,1),P))./pi_help2;
-%             end 
-%             
-%             coefmat2 = kron((pts<=Pt(b1)),squeeze(coefmat(t+1,1,:))')...
-%                 + kron((pts<=Pt(b2))&(pts>Pt(b1)),squeeze(coefmat(t+1,2,:))')...
-%                 + kron((pts>Pt(b2)),squeeze(coefmat(t+1,3,:))');
-%             
-%             % put together variables
-%             Vtp1 = [ones(1,6); pts'; piplus'];
-%             
-%             % calculate value function for t+1 in preparation for EV
-%             Vprep = diag(coefmat2*Vtp1);
-%             EVmult = [P*[.185 .63 .185] (1-P)*[.185 .63 .185]];
-%             Vnew = U + dlta*EVmult*Vprep;
         else % just take optimal value
             ltdum = ltbnd(Vdum==max(Vdum));
             Vnew = max(Vdum);
         end
         
         % figure out which regression plane you're on and calculate error
-        % whichplane = (S<=Pt(b1)) + 2*((S>Pt(b1))&(S<=Pt(b2)))...
-        %     + 3*(S>Pt(b2));
-        wp = [0 Pcrit];
-        for j = 1:length(Pcrit)
-            if (wp(j)<=S)&&(wp(j+1)>S)
+        %wp = [0 Pcrit];
+        for j = 1:length(bnds)-1
+            if (S>Pt(bnds(j)))&&(S<=Pt(bnds(j+1)))
                 whichplane = j;
             end
         end
@@ -409,7 +386,7 @@ for m = 1:M
 
         % choose step size
         alfa = 1/(m+N);
-        alfamult = 10;  %experiment with changing its size
+        alfamult = 100;  %experiment with changing its size
         alfa = alfa*alfamult;
         
         % update parameter
@@ -427,20 +404,6 @@ for m = 1:M
             
             results.coefupd(m,:,:) = coefmat(t,:,:);
         end
-
-%         % update concentration and probability for next tiemstep
-%         Sdum = B*S + b + ltdum + P*r*(S>Pcrit1) + (1-P)*r*(S>Pcrit2) + randn*sgma;        
-%         Lt1b = exp(-(Sdum - (B*S + b + ltdum + (S>Pcrit1)*r))^2/(2*sgma^2));
-%         Lt2b = exp(-(Sdum - (B*S + b + ltdum + (S>Pcrit2)*r))^2/(2*sgma^2));
-%         Pdum = P*Lt1b/(P*Lt1b + (1-P)*Lt2b);
-%         if Sdum < 0     % update concentration for next timestep
-%             S = 0;
-%         elseif Sdum > 1
-%             S = 1;
-%         else
-%             S = Sdum;
-%         end
-%         P = Pdum;    % update probability estimate
         
         lt_prev = ltdum;
         
@@ -474,8 +437,9 @@ results.Pt = Pt;
 results.lt = lt;
 results.pii = pii;
 results.coefmat = coefmat;
-results.b1 = b1;
-results.b2 = b2;
+%results.b1 = b1;
+%results.b2 = b2;
+results.bnds = bnds;
 results.coefmatold = coefmatold;
 
 %% diagnostic plots
