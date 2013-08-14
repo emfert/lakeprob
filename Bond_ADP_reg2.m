@@ -5,25 +5,25 @@
 function results = Bond_ADP_reg2()
 % set up initial parameters
 clear
-Pcrit = [.3 .4 .5];     % candidate eutrophication thresholds
+Pcrit = [.3 .6];     % candidate eutrophication thresholds
 B = .2;                 % decay rate of P concentration (B in lempert paper)
 b = .1;                 % natural baseline loading
 r = .25;                % P recycling parameter
-dlta = 1/1.03;          % discount factor
+dlta = 1/1.03;          % discount factor (DR = ((1/dlta)-1) * 100%)
 alphaa = 1;             % relative marginal utility of loadings
 sgma = .04;             % st dev of stochastic shock
 bbeta = 10;             % eutrophic cost
 phi = 10;               % emissions reduction cost constant
 
-N = 100;                % no. samples total, for initial data collection
-p = 5;                  % probabilit it jumps to a random decision
+N = 1000;                % no. samples total, for initial data collection
+p = .05;                  % probability it makes a random decision instead of optimal
 
 pct5 = norminv(.05,0,sgma);
 pct95 = norminv(.95,0,sgma);
 
-NPt = 21;               % no. grid points for Pt (concentration)
-Npii = 21;              % no. grid points for pii (probabilities)
-Nlt = 41;               % no. grid points for P loadings
+NPt = 41;               % no. grid points for Pt (concentration)
+Npii = 41;              % no. grid points for pii (probabilities)
+Nlt = 81;               % no. grid points for P loadings
 
 Pt = linspace(0,1,NPt);
 pii = linspace(0,1,Npii);
@@ -32,12 +32,13 @@ T = 10;                 % time span
 
 %% sample points to fit initial regression
 
+% generate value function approximation coefficients
 int = 5;    % intercept
 ltc = -2;   % previous time step's loading rate
 ptc = -1;   % concentration
 piic = -3;  % threshold exceedance
 
-V = @(pt) [int ltc ptc piic*ones(1,length(Pcrit))]*pt';
+V = @(pt) [int ltc ptc piic*ones(1,length(Pcrit)-1)]*pt';
 
 % Sobol sample for N initial concentrations and prob dists
 pp = sobolset(2+length(Pcrit));
@@ -47,7 +48,7 @@ testpts(:,2) = testpts(:,2)*Pt(end);
 for i = 4:length(Pcrit)+1
     testpts(:,i) = testpts(:,i).*(1-sum(testpts(:,3:i-1),2));
 end
-testpts(:,length(Pcrit)+2) = 1-sum(testpts(:,3:end-1),2);
+testpts(:,end) = 1-sum(testpts(:,3:end-1),2);
 
 % initialize results array
 res = zeros(length(Pcrit)+4,T,N);
@@ -55,8 +56,15 @@ res = zeros(length(Pcrit)+4,T,N);
 for n = 1:N
     n
     S = testpts(n,2);                   % initial concentration
-    P = testpts(n,3:length(Pcrit)+2);   % initial prob dist
+    
+    % shuffle prob vectors so that distributions are about the same
+    % (without this, the first sample is uniform and the others have too
+    % much mass at low values
+    testpts(n,3:end) = testpts(n,2+randperm(length(Pcrit)));
+    P = testpts(n,3:end);               % initial prob dist
+    
     lt_prev = testpts(n,1);             % initial previous loading rate
+    
     for t = 1:T-1
         Vdum = zeros(1,Nlt);
         for k = 1:Nlt               % iterate through control space                        
@@ -75,7 +83,7 @@ for n = 1:N
             % i
             Lt = zeros(3,length(Pcrit),length(Pcrit));
             for i = 1:length(Pcrit)
-                Lt(:,:,i) = exp(-(pts - pts(2,i)).^2/(2*sgma^2));
+                Lt(:,:,i) = exp(-(pts - pts(2,i)).^2)/(2*sgma^2);
             end
             
             % generate array that's no. test points for calculating EV for
@@ -87,12 +95,11 @@ for n = 1:N
                 piplus(:,i,:) = (squeeze(Lt(:,i,:)).*kron(ones(3,1),P))./pi_help2;
             end
             
-            % extract V(t+1) from lookup table for each point necessary for
-            % EV calculation
+            % approximate V(t+1) for each point necessary for EV calculation
             Vpts = zeros(3,length(Pcrit));
             for i = 1:3
                 for j = 1:length(Pcrit)
-                    Vpts(i,j) = V([1 lt_prev S squeeze(piplus(i,j,:))']);
+                    Vpts(i,j) = V([1 lt(k) pts(i,j) squeeze(piplus(i,j,1:end-1))']);
                 end
             end
 
@@ -110,7 +117,7 @@ for n = 1:N
             Vnt = max(Vdum);
         end
         
-        % put decisions and function values in lookup tables
+        % record decisions and function values
         ltdum = lt(Vnt==Vdum);
         U = alphaa*ltdum - bbeta*(S>Pcrit)*P' - phi*(lt_prev-ltdum)*(lt_prev>ltdum);
         
@@ -124,13 +131,13 @@ for n = 1:N
         % update lt_prev, concentration S, and probdist P
         lt_prev = ltdum;
         
-        p_log = zeros(length(Pcrit),1);
-        for i = 1:length(Pcrit)
-            p_log(i) = S>Pcrit(i);
-        end        
-        Sdum = B*S + b + ltdum + r*P*p_log + randn*sgma;
+        %p_log = zeros(length(Pcrit),1);
+        %for i = 1:length(Pcrit)
+        %    p_log(i) = S>Pcrit(i);
+        %end        
+        Sdum = B*S + b + ltdum + r*P*(S>Pcrit)' + randn*sgma;
         
-        Ltb = exp(-(Sdum - (B*S + b + ltdum + r*p_log)).^2/(2*sgma^2));        
+        Ltb = exp(-(Sdum - (B*S + b + ltdum + r*(S>Pcrit)')).^2)/(2*sgma^2);        
         P = P.*Ltb'/(P*Ltb);
         
         % no nonphysical concentrations
@@ -139,6 +146,7 @@ for n = 1:N
         elseif Sdum > 1
             S = 1;
         else
+            S = Sdum;
         end
     end
 end
@@ -153,9 +161,9 @@ coefmat(end,:,:) = kron(ones(length(Pcrit)+1,1),[5 -1 -2 -3*ones(1,length(Pcrit)
 planetest = [0 Pcrit 1];
 for t = 1:T-1
     for i = 1:length(Pcrit)+1
-        regvecx = squeeze(res(1:length(Pcrit)+1,t,(testpts(:,2)>=planetest(i))&(testpts(:,2)<=planetest(i+1))))';
+        regvecx = squeeze(res(1:length(Pcrit)+1,t,(res(2,t,:)>=planetest(i))&(res(2,t,:)<=planetest(i+1))))';
         regvecx = [ones(length(regvecx),1) regvecx];
-        regvecy = squeeze(res(end,t,(testpts(:,2)>=planetest(i))&(testpts(:,2)<=planetest(i+1))));
+        regvecy = squeeze(res(end,t,(res(2,t,:)>=planetest(i))&(res(2,t,:)<=planetest(i+1))));
         coefmat(t,i,:) = regress(regvecy,regvecx);
     end
 end
@@ -173,7 +181,7 @@ coefmatold = coefmat;
 
 %% ADP stage
 
-M = 100;                % number of ADP iterations
+M = 1000;                % number of ADP iterations
 
 for m = 1:M
     m
@@ -187,6 +195,7 @@ for m = 1:M
         dif = dif+P(i);
     end
     P(end) = 1-dif;
+    P = P(randperm(length(P)));
     
     % initial prior loading rate
     lt_prev = rand*lt(end);      
@@ -209,7 +218,7 @@ for m = 1:M
             % i
             Lt = zeros(3,length(Pcrit),length(Pcrit));
             for j = 1:length(Pcrit)
-                Lt(:,:,j) = exp(-(pts - pts(2,j)).^2/(2*sgma^2));
+                Lt(:,:,j) = exp(-(pts - pts(2,j)).^2)/(2*sgma^2);
             end
             
             % make array that's no. test points for calculating EV for
@@ -238,17 +247,12 @@ for m = 1:M
             Vtp1 = zeros(size(pts));
             for j = 1:3
                 for k = 1:length(Pcrit)
-                    Vtp1(j,k) = squeeze(coefmat2(j,k,:))'*[1 lt_prev S P(1:end-1)]';
+                    Vtp1(j,k) = squeeze(coefmat2(j,k,:))'*[1 lt(i) pts(j,k) squeeze(piplus(j,k,1:end-1))']';
                 end
             end
                         
             % calculate EV for t+1
-            EVmult = zeros(3,length(Pcrit));
-            for j = 1:length(Pcrit)
-                EVmult(:,j) = P(j)*[.185 .63 .185]';
-            end
-            
-            Vdum(i) = U + dlta*sum(sum(EVmult.*Vtp1));
+            Vdum(i) = U + dlta*[.185 .63 .185]*Vtp1*P';
         end
         
         % sometimes use a random loading rate instead of the optimal one
@@ -257,7 +261,7 @@ for m = 1:M
             ltdum = lt(randdum2(1));
             Vnew = Vdum(randdum2(1));
         else % just take optimal value
-            ltdum = ltbnd(Vdum==max(Vdum));
+            ltdum = lt(Vdum==max(Vdum));
             Vnew = max(Vdum);
         end
         
@@ -272,7 +276,7 @@ for m = 1:M
         
         % calculate gradient
         grad = zeros(1,1,2+length(Pcrit));
-        grad(:,:,:) = [-1; lt_prev; -S; -P(1:end-1)'];
+        grad(:,:,:) = [-1; -lt_prev; -S; -P(1:end-1)'];
 
         % choose step size
         alfa = 1/(m+N);
@@ -298,15 +302,11 @@ for m = 1:M
         % store this period's loading rate for next time step
         lt_prev = ltdum;
         
-        % simulate concentration in next period
-        p_log = zeros(length(Pcrit),1);
-        for i = 1:length(Pcrit)
-            p_log(i) = S>Pcrit(i);
-        end        
-        Sdum = B*S + b + ltdum + r*P*p_log + randn*sgma;
+        % simulate concentration in next period      
+        Sdum = B*S + b + ltdum + r*P*(S>Pcrit)' + randn*sgma;
         
         % update probability distribution given simulated concentration
-        Ltb = exp(-(Sdum - (B*S + b + ltdum + r*p_log)).^2/(2*sgma^2));        
+        Ltb = exp(-(Sdum - (B*S + b + ltdum + r*(S>Pcrit)')).^2)/(2*sgma^2);        
         P = P.*Ltb'/(P*Ltb);
         
         % no nonphysical concentrations
@@ -315,6 +315,7 @@ for m = 1:M
         elseif Sdum > 1
             S = 1;
         else
+            S = Sdum;
         end        
     end
 end
@@ -391,15 +392,15 @@ results.coefmatold = coefmatold;
 
 % seed rng
 
-P0 = [.4 .3 .3];        % initial guess for prob dist
-X0 = .787;              % initial state
-Xcrit = Pcrit(1);             % actual Xcrit value
+P0 = [.4 .6];        % initial guess for prob dist
+X0 = .2;%.787;              % initial state
+Xcrit = Pcrit(2);             % actual Xcrit value
 NN = 20;              % number of sample paths to simulate
-T2 = 20;               % how far out in time to simulate them
+T2 = 30;               % how far out in time to simulate them
 L0 = 0;                 % initial loading rate
 
 % get coefficient matrix for forward simulations, usu. t=1
-coefmatsim = squeeze(coefmat(1,:,:));
+coefmatsim = squeeze(coefmat(5,:,:));
 
 % initialize concentration and loading storage matrices
 X = zeros(NN,T2);
@@ -430,7 +431,7 @@ for i = 1:NN
             % i
             Lt = zeros(3,length(Pcrit),length(Pcrit));
             for k = 1:length(Pcrit)
-                Lt(:,:,k) = exp(-(pts - pts(2,k)).^2/(2*sgma^2));
+                Lt(:,:,k) = exp(-(pts - pts(2,k)).^2)/(2*sgma^2);
             end
             
             % make array that's no. test points for calculating EV for
@@ -463,37 +464,46 @@ for i = 1:NN
             end
                         
             % calculate EV for t+1
-            EVmult = zeros(3,length(Pcrit));
-            for k = 1:length(Pcrit)
-                EVmult(:,k) = squeeze(P(i,t,k))*[.185 .63 .185]';
-            end
-            
-            Vdum(j) = U + dlta*sum(sum(EVmult.*Vtp1));
+            Vdum(j) = U + dlta*[.185 .63 .185]*Vtp1*squeeze(P(i,t,:));
         end
         
         L(i,t) = lt(Vdum==max(Vdum));
         V(i,t) = max(Vdum);
         
-        % simulate concentration in next period
-        p_log = zeros(length(Pcrit),1);
-        for j = 1:length(Pcrit)
-            p_log(j) = X(i,t)>Pcrit(j);
-        end        
+        % simulate concentration in next period     
         X(i,t+1) = B*X(i,t) + b + L(i,t) + r*(X(i,t)>Xcrit) + randn*sgma;
         
         % update probability distribution given simulated concentration
-        Ltb = exp(-(X(i,t+1) - (B*X(i,t) + b + L(i,t) + r*p_log)).^2/(2*sgma^2));        
-        P(i,t+1,:) = squeeze(P(i,t,:)).*Ltb/(squeeze((P(i,t,:)))'*Ltb);
+        Ltb = exp(-(X(i,t+1) - (B*X(i,t) + b + L(i,t) + r*(X(i,t)>Pcrit))).^2)/(2*sgma^2);        
+        P(i,t+1,:) = squeeze(P(i,t,:))'.*Ltb/(squeeze(P(i,t,:))'*Ltb');
         
         % no nonphysical concentrations
-        if X(i,t) < 0
-            X(i,t) = 0;
-        elseif Sdum > 1
-            X(i,t) = 1;
+        if X(i,t+1) < 0
+            X(i,t+1) = 0;
+        elseif X(i,t+1) > 1
+            X(i,t+1) = 1;
         else
         end                
     end
-end      
+end
+
+%% diagnostic plots
+
+% value function
+ltest = .05;
+testfun1 = @(ss,pp) coefmatsim(1,:)*[1 ltest ss pp]';
+testfun2 = @(ss,pp) coefmatsim(2,:)*[1 ltest ss pp]';
+testfun3 = @(ss,pp) coefmatsim(3,:)*[1 ltest ss pp]';
+
+figure
+hold on
+ezmesh(testfun1, [0, Pcrit(1), 0, 1])
+ezmesh(testfun2, [Pcrit(1), Pcrit(2), 0, 1])
+ezmesh(testfun3, [Pcrit(2), 1, 0, 1])
+xlim([0 1])
+zlim([-7 5])
+
+
 end
         
         
