@@ -28,7 +28,7 @@ Nlt = 81;               % no. grid points for P loadings
 Pt = linspace(0,1,NPt);
 pii = linspace(0,1,Npii);
 lt = linspace(0,.8,Nlt);
-T = 10;                 % time span
+T = 20;                 % time span
 
 %% sample points to fit initial regression
 
@@ -155,14 +155,31 @@ end
 % V = results.V;
 
 % initialize matrix to store regression coefficients
-coefmat = zeros(T,length(Pcrit)+1,length(Pcrit)+2); % time, plane, param
-coefmat(end,:,:) = kron(ones(length(Pcrit)+1,1),[5 -1 -2 -3*ones(1,length(Pcrit)-1)]);
+% intguess = [0 0 0 0 0];           % for testing interactions, guess for interaction parameters
+intguess = [];
+
+num_int = length(intguess);
+coefmat = zeros(T,length(Pcrit)+1,length(Pcrit)+2+num_int); % time, plane, param
+coefmat(end,:,:) = kron(ones(length(Pcrit)+1,1),[5 -1 -2 -3*ones(1,length(Pcrit)-1) intguess]);
 
 planetest = [0 Pcrit 1];
 for t = 1:T-1
+    % do interactions - this is previous loading rate with both
+    % concentration and probability of the lowest threshold
+    inthelp = squeeze(res(:,t,:))';
+    int = [inthelp(:,1).*inthelp(:,2) inthelp(:,1).*inthelp(:,3) ...
+        inthelp(:,1).^2 inthelp(:,2).^2 inthelp(:,3).^2];
+    
     for i = 1:length(Pcrit)+1
         regvecx = squeeze(res(1:length(Pcrit)+1,t,(res(2,t,:)>=planetest(i))&(res(2,t,:)<=planetest(i+1))))';
-        regvecx = [ones(length(regvecx),1) regvecx];
+        
+        % for any interactions:
+        % intx = int((res(2,t,:)>=planetest(i))&(res(2,t,:)<=planetest(i+1)),:);
+        
+        % for no interactions:
+        intx = [];
+        
+        regvecx = [ones(length(regvecx),1) regvecx intx];
         regvecy = squeeze(res(end,t,(res(2,t,:)>=planetest(i))&(res(2,t,:)<=planetest(i+1))));
         coefmat(t,i,:) = regress(regvecy,regvecx);
     end
@@ -182,6 +199,13 @@ coefmatold = coefmat;
 %% ADP stage
 
 M = 1000;                % number of ADP iterations
+results = [];
+
+%intA = '[lt(i)*pts(j,k) lt(i)*piplus(j,k,1) lt(i)^2 pts(j,k)^2 piplus(j,k,1)^2]';
+%intB = '[lt_prev*S; lt_prev*P(1); lt_prev^2; S^2; P(1)^2]';
+
+intA = '[]';
+intB = '[]';
 
 for m = 1:M
     m
@@ -232,7 +256,7 @@ for m = 1:M
             
             % make a matrix with appropriate regression coefficients for
             % t+1 concentrations
-            coefmat2 = zeros(3,length(Pcrit),length(Pcrit)+2);
+            coefmat2 = zeros(3,length(Pcrit),length(Pcrit)+2+num_int);
             for j = 1:3
                 for k = 1:length(Pcrit)
                     for jj = 1:length(planetest)-1
@@ -247,7 +271,8 @@ for m = 1:M
             Vtp1 = zeros(size(pts));
             for j = 1:3
                 for k = 1:length(Pcrit)
-                    Vtp1(j,k) = squeeze(coefmat2(j,k,:))'*[1 lt(i) pts(j,k) squeeze(piplus(j,k,1:end-1))']';
+                    Vtp1(j,k) = squeeze(coefmat2(j,k,:))'*[1 lt(i) pts(j,k) squeeze(piplus(j,k,1:end-1))' ... 
+                        eval(intA)]';
                 end
             end
                         
@@ -272,12 +297,12 @@ for m = 1:M
             end
         end
         
-        error = Vnew - squeeze(coefmat(t,whichplane,:))'*[1; lt_prev; S; P(1:end-1)'];
+        error = Vnew - squeeze(coefmat(t,whichplane,:))'*[1; lt_prev; S; P(1:end-1)'; eval(intB)];
         
         % calculate gradient
-        grad = zeros(1,1,2+length(Pcrit));
-        grad(:,:,:) = [-1; -lt_prev; -S; -P(1:end-1)'];
-
+        grad = zeros(1,1,2+length(Pcrit)+num_int);
+        grad(:,:,:) = [-1; -lt_prev; -S; -P(1:end-1)'; -eval(intB)];
+        
         % choose step size
         alfa = 1/(m+N);
         alfamult = 10;  %experiment with changing its size
@@ -316,7 +341,8 @@ for m = 1:M
             S = 1;
         else
             S = Sdum;
-        end        
+        end
+        
     end
 end
 
@@ -393,20 +419,33 @@ results.coefmatold = coefmatold;
 % seed rng
 
 P0 = [.4 .6];        % initial guess for prob dist
-X0 = .2;%.787;              % initial state
+%X0 = .5;%.787;              % initial state
+X0 = b/(1-B);
 Xcrit = Pcrit(2);             % actual Xcrit value
-NN = 20;              % number of sample paths to simulate
+NN = 300;              % number of sample paths to simulate
 T2 = 30;               % how far out in time to simulate them
 L0 = 0;                 % initial loading rate
 
 % get coefficient matrix for forward simulations, usu. t=1
-coefmatsim = squeeze(coefmat(5,:,:));
+coefmatsim = squeeze(coefmat(1,:,:));
+%intC = '[L(i,t)*pts(jj,k) L(i,t)*piplus(jj,k,1) L(i,t)^2 pts(jj,k)^2 piplus(jj,k,1)^2]';
+intC = '[]';
+
+%ints = '[L0*X0 L0*P0(1) L0^2 X0^2 P0(1)^2]';
+ints = '[]';
+
+for jj = 1:length(planetest)-1
+    if (X0>=planetest(jj))&&(X0<=planetest(jj+1))
+        V_est = coefmatsim(jj,:)*[1 L0 X0 P0(1:end-1) eval(ints)]';
+    end
+end
 
 % initialize concentration and loading storage matrices
 X = zeros(NN,T2);
 L = zeros(NN,T2);
 P = zeros(NN,T2,length(Pcrit));
 V = zeros(NN,T2);
+U = zeros(NN,T2);
 
 X(:,2) = X0;
 P(:,2,:) = kron(ones(NN,1),P0);
@@ -417,8 +456,9 @@ for i = 1:NN
     for t = 2:T2
         % calculate optimal loading rate
         Vdum = zeros(Nlt,1);
+        Udum = zeros(Nlt,1);
         for j = 1:Nlt
-            U = alphaa*lt(j) - bbeta*(X(i,t)>Xcrit) - phi*(L(i,t-1)-lt(j))*(L(i,t-1)>lt(j));
+            Udum(j) = alphaa*lt(j) - bbeta*(X(i,t)>Xcrit) - phi*(L(i,t-1)-lt(j))*(L(i,t-1)>lt(j));
             
             % rows are 5th, mean, 95th percentile next-period
             % concentrations, columns correspond to each threshold
@@ -459,16 +499,17 @@ for i = 1:NN
             Vtp1 = zeros(size(pts));
             for jj = 1:3
                 for k = 1:length(Pcrit)
-                    Vtp1(jj,k) = coefmat2*[1 L(i,t) pts(jj,k) squeeze(piplus(jj,k,1:end-1))']';
+                    Vtp1(jj,k) = coefmat2*[1 L(i,t) pts(jj,k) squeeze(piplus(jj,k,1:end-1))' eval(intC)]';
                 end
             end
                         
             % calculate EV for t+1
-            Vdum(j) = U + dlta*[.185 .63 .185]*Vtp1*squeeze(P(i,t,:));
+            Vdum(j) = Udum(j) + dlta*[.185 .63 .185]*Vtp1*squeeze(P(i,t,:));
         end
         
         L(i,t) = lt(Vdum==max(Vdum));
         V(i,t) = max(Vdum);
+        U(i,t) = Udum(Vdum==max(Vdum));
         
         % simulate concentration in next period     
         X(i,t+1) = B*X(i,t) + b + L(i,t) + r*(X(i,t)>Xcrit) + randn*sgma;
@@ -487,13 +528,17 @@ for i = 1:NN
     end
 end
 
+Vcalc = U*dlta.^(0:T2-1)';
+
 %% diagnostic plots
+
+indic = '[ltest*ss ltest*pp ltest^2 ss^2 pp^2]';
 
 % value function
 ltest = .05;
-testfun1 = @(ss,pp) coefmatsim(1,:)*[1 ltest ss pp]';
-testfun2 = @(ss,pp) coefmatsim(2,:)*[1 ltest ss pp]';
-testfun3 = @(ss,pp) coefmatsim(3,:)*[1 ltest ss pp]';
+testfun1 = @(ss,pp) coefmatsim(1,:)*[1 ltest ss pp eval(indic)]';
+testfun2 = @(ss,pp) coefmatsim(2,:)*[1 ltest ss pp eval(indic)]';
+testfun3 = @(ss,pp) coefmatsim(3,:)*[1 ltest ss pp eval(indic)]';
 
 figure
 hold on
@@ -501,7 +546,25 @@ ezmesh(testfun1, [0, Pcrit(1), 0, 1])
 ezmesh(testfun2, [Pcrit(1), Pcrit(2), 0, 1])
 ezmesh(testfun3, [Pcrit(2), 1, 0, 1])
 xlim([0 1])
-zlim([-7 5])
+zlim([-10 5])
+
+%% plotting sample paths
+figure
+hold on
+grid on
+plot(X')
+
+figure
+hold on
+grid on
+plot(L')
+
+figure
+hold on
+grid on
+plot(squeeze(P(:,:,2))')
+
+
 
 
 end

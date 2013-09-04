@@ -1,8 +1,8 @@
 % % This reproduces the lake problem model in Lempert and Collins (2007)
 
 function [x,fval,exitflag] = Lempert_LakeProbOpt()
-    x0 = [2.5, .3, .3];
-    options = optimset('Display','iter','TolFun',1e-3,'TolX',1e-3,'MaxIter',100);
+    x0 = [2.5, .03, .3];
+    options = optimset('Display','iter','TolFun',1e-7,'TolX',1e-3,'MaxIter',100);
     [x,fval,exitflag] = fminsearch(@LCValFcn,x0,options);
 end
 
@@ -31,7 +31,8 @@ N = 2000;             % no. samples total, for initial data collection
 T = 100;                 % time span
 
 Xcrit = [.3 .4 .5 .6 .7 .8 .9];
-PXcrit = [0 0 0 .05 .25 .45 .25];
+%PXcrit = [0 0 0 .05 .25 .45 .25];
+PXcrit = [.4 0 0 .6 0 0 0];
 
 X0 = b/(1-B);
 Xcrit_est0 = .787;
