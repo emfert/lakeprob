@@ -2,6 +2,10 @@
 % linear model. Unlike previous versions, it keeps track of the previous
 % loading rate as a state.
 
+% This newer version has more flexibility in basis functions and uses
+% Gauss-Hermite quadrature to approximate the normal PDF rather than the
+% three-point method
+
 function results = Bond_ADP_reg2()
 % set up initial parameters
 clear
@@ -15,11 +19,17 @@ sgma = .04;             % st dev of stochastic shock
 bbeta = 10;             % eutrophic cost
 phi = 10;               % emissions reduction cost constant
 
-N = 1000;                % no. samples total, for initial data collection
+N = 30;                % no. samples total, for initial data collection
 p = .05;                  % probability it makes a random decision instead of optimal
 
-pct5 = norminv(.05,0,sgma);
-pct95 = norminv(.95,0,sgma);
+% for Gauss-Hermite quadrature
+xk_h = [-2.65196 -1.67355 -.81629 0 .81629 1.67355 2.65196];
+xk = sqrt(2)*sgma*xk_h;
+wxk = [.0009718 .0545 .4256 .8103 .4256 .0545 .0009718];
+g = length(xk_h);                  % no. points for Gauss-Hermite quadrature
+
+%pct5 = norminv(.05,0,sgma);
+%pct95 = norminv(.95,0,sgma);
 
 NPt = 41;               % no. grid points for Pt (concentration)
 Npii = 41;              % no. grid points for pii (probabilities)
@@ -74,37 +84,39 @@ for n = 1:N
             % rows are 5th, mean, 95th percentile next-period
             % concentrations, columns correspond to each candidate
             % threshold
-            pts = zeros(3,length(Pcrit));
-            pts(2,:) = B*S + b + lt(k) + r*(S>Pcrit);
-            pts(1,:) = pts(2,:) + pct5;
-            pts(3,:) = pts(2,:) + pct95;
+            
+            %pts = zeros(g,length(Pcrit));
+            pts_mid = B*S + b + lt(k) + r*(S>Pcrit);
+            pts_help = kron(ones(g,1),pts_mid);
+            xk_help = kron(ones(1,length(Pcrit)),xk');
+            pts = pts_help+xk_help;
                         
             % Lt(:,:,i) is the likelihood of each point in pts given model
             % i
-            Lt = zeros(3,length(Pcrit),length(Pcrit));
+            Lt = zeros(g,length(Pcrit),length(Pcrit));
             for i = 1:length(Pcrit)
-                Lt(:,:,i) = exp(-(pts - pts(2,i)).^2)/(2*sgma^2);
+                Lt(:,:,i) = exp(-(pts - pts_mid(i)).^2)/(2*sgma^2);
             end
             
             % generate array that's no. test points for calculating EV for
             % each model X number of models to test X number of predictors
-            piplus = zeros(3,length(Pcrit),length(Pcrit));
+            piplus = zeros(g,length(Pcrit),length(Pcrit));
             for i = 1:length(Pcrit)
                 pi_help = squeeze(Lt(:,i,:))*P';
                 pi_help2 = kron(ones(1,length(Pcrit)),pi_help);
-                piplus(:,i,:) = (squeeze(Lt(:,i,:)).*kron(ones(3,1),P))./pi_help2;
+                piplus(:,i,:) = (squeeze(Lt(:,i,:)).*kron(ones(g,1),P))./pi_help2;
             end
             
             % approximate V(t+1) for each point necessary for EV calculation
-            Vpts = zeros(3,length(Pcrit));
-            for i = 1:3
+            Vpts = zeros(g,length(Pcrit));
+            for i = 1:g
                 for j = 1:length(Pcrit)
                     Vpts(i,j) = V([1 lt(k) pts(i,j) squeeze(piplus(i,j,1:end-1))']);
                 end
             end
 
             % EV of V(t+1)
-            E = [.185 .63 .185]*Vpts;            
+            E = (1/sqrt(pi))*wxk*Vpts;            
             Vdum(k) = U + dlta*(E*P');
         end
         
@@ -171,7 +183,7 @@ for t = 1:T-1
         inthelp(:,1).^2 inthelp(:,2).^2 inthelp(:,3).^2];
     
     for i = 1:length(Pcrit)+1
-        regvecx = squeeze(res(1:length(Pcrit)+1,t,(res(2,t,:)>=planetest(i))&(res(2,t,:)<=planetest(i+1))))';
+        regvecx = squeeze(res(1:length(Pcrit)+1,t,(res(2,t,:)>=planetest(i))&(res(2,t,:)<planetest(i+1))))';
         
         % for any interactions:
         % intx = int((res(2,t,:)>=planetest(i))&(res(2,t,:)<=planetest(i+1)),:);
@@ -179,8 +191,8 @@ for t = 1:T-1
         % for no interactions:
         intx = [];
         
-        regvecx = [ones(length(regvecx),1) regvecx intx];
-        regvecy = squeeze(res(end,t,(res(2,t,:)>=planetest(i))&(res(2,t,:)<=planetest(i+1))));
+        regvecx = [ones(size(regvecx,1),1) regvecx intx];
+        regvecy = squeeze(res(end,t,(res(2,t,:)>=planetest(i))&(res(2,t,:)<planetest(i+1))));
         coefmat(t,i,:) = regress(regvecy,regvecx);
     end
 end
@@ -198,7 +210,7 @@ coefmatold = coefmat;
 
 %% ADP stage
 
-M = 1000;                % number of ADP iterations
+M = 10;                % number of ADP iterations
 results = [];
 
 %intA = '[lt(i)*pts(j,k) lt(i)*piplus(j,k,1) lt(i)^2 pts(j,k)^2 piplus(j,k,1)^2]';
@@ -233,31 +245,32 @@ for m = 1:M
             
             % rows are 5th, mean, 95th percentile next-period
             % concentrations, columns correspond to each threshold
-            pts = zeros(3,length(Pcrit));
-            pts(2,:) = B*S + b + lt(i) + r*(S>Pcrit);
-            pts(1,:) = pts(2,:) + pct5;
-            pts(3,:) = pts(2,:) + pct95;
+            
+            pts_mid = B*S + b + lt(k) + r*(S>Pcrit);
+            pts_help = kron(ones(g,1),pts_mid);
+            xk_help = kron(ones(1,length(Pcrit)),xk');
+            pts = pts_help+xk_help;
                         
             % Lt(:,:,i) is the likelihood of each point in pts given model
             % i
-            Lt = zeros(3,length(Pcrit),length(Pcrit));
+            Lt = zeros(g,length(Pcrit),length(Pcrit));
             for j = 1:length(Pcrit)
-                Lt(:,:,j) = exp(-(pts - pts(2,j)).^2)/(2*sgma^2);
+                Lt(:,:,j) = exp(-(pts - pts_mid(j)).^2)/(2*sgma^2);
             end
             
             % make array that's no. test points for calculating EV for
             % each model X number of models to test X number of predictors
-            piplus = zeros(3,length(Pcrit),length(Pcrit));
+            piplus = zeros(g,length(Pcrit),length(Pcrit));
             for j = 1:length(Pcrit)
                 pi_help = squeeze(Lt(:,j,:))*P';
                 pi_help2 = kron(ones(1,length(Pcrit)),pi_help);
-                piplus(:,j,:) = (squeeze(Lt(:,j,:)).*kron(ones(3,1),P))./pi_help2;
+                piplus(:,j,:) = (squeeze(Lt(:,j,:)).*kron(ones(g,1),P))./pi_help2;
             end   
             
             % make a matrix with appropriate regression coefficients for
             % t+1 concentrations
-            coefmat2 = zeros(3,length(Pcrit),length(Pcrit)+2+num_int);
-            for j = 1:3
+            coefmat2 = zeros(g,length(Pcrit),length(Pcrit)+2+num_int);
+            for j = 1:g
                 for k = 1:length(Pcrit)
                     for jj = 1:length(planetest)-1
                         if (pts(j,k)>=planetest(jj))&&(pts(j,k)<=planetest(jj+1))
@@ -269,7 +282,7 @@ for m = 1:M
                         
             % calculate value function for t+1
             Vtp1 = zeros(size(pts));
-            for j = 1:3
+            for j = 1:g
                 for k = 1:length(Pcrit)
                     Vtp1(j,k) = squeeze(coefmat2(j,k,:))'*[1 lt(i) pts(j,k) squeeze(piplus(j,k,1:end-1))' ... 
                         eval(intA)]';
@@ -277,7 +290,7 @@ for m = 1:M
             end
                         
             % calculate EV for t+1
-            Vdum(i) = U + dlta*[.185 .63 .185]*Vtp1*P';
+            Vdum(i) = U + dlta*(1/sqrt(pi))*wxk*Vtp1*P';
         end
         
         % sometimes use a random loading rate instead of the optimal one
@@ -462,30 +475,31 @@ for i = 1:NN
             
             % rows are 5th, mean, 95th percentile next-period
             % concentrations, columns correspond to each threshold
-            pts = zeros(3,length(Pcrit));
-            pts(2,:) = B*X(i,t) + b + lt(j) + r*(X(i,t)>Pcrit);
-            pts(1,:) = pts(2,:) + pct5;
-            pts(3,:) = pts(2,:) + pct95;
+            
+            pts_mid = B*S + b + lt(k) + r*(S>Pcrit);
+            pts_help = kron(ones(g,1),pts_mid);
+            xk_help = kron(ones(1,length(Pcrit)),xk');
+            pts = pts_help+xk_help;
                         
             % Lt(:,:,i) is the likelihood of each point in pts given model
             % i
-            Lt = zeros(3,length(Pcrit),length(Pcrit));
+            Lt = zeros(g,length(Pcrit),length(Pcrit));
             for k = 1:length(Pcrit)
-                Lt(:,:,k) = exp(-(pts - pts(2,k)).^2)/(2*sgma^2);
+                Lt(:,:,k) = exp(-(pts - pts_mid(k)).^2)/(2*sgma^2);
             end
             
             % make array that's no. test points for calculating EV for
             % each model X number of models to test X number of predictors
-            piplus = zeros(3,length(Pcrit),length(Pcrit));
+            piplus = zeros(g,length(Pcrit),length(Pcrit));
             for k = 1:length(Pcrit)
                 pi_help = squeeze(Lt(:,k,:))*squeeze(P(i,t,:));
                 pi_help2 = kron(ones(1,length(Pcrit)),pi_help);
-                piplus(:,k,:) = (squeeze(Lt(:,k,:)).*kron(ones(3,1),squeeze(P(i,t,:))'))./pi_help2;
+                piplus(:,k,:) = (squeeze(Lt(:,k,:)).*kron(ones(g,1),squeeze(P(i,t,:))'))./pi_help2;
             end   
             
             % make a matrix with appropriate regression coefficients for
             % t+1 concentrations
-            for kk = 1:3
+            for kk = 1:g
                 for k = 1:length(Pcrit)
                     for jj = 1:length(planetest)-1
                         if (pts(kk,k)>=planetest(jj))&&(pts(kk,k)<=planetest(jj+1))
@@ -497,14 +511,14 @@ for i = 1:NN
                         
             % calculate value function for t+1
             Vtp1 = zeros(size(pts));
-            for jj = 1:3
+            for jj = 1:g
                 for k = 1:length(Pcrit)
                     Vtp1(jj,k) = coefmat2*[1 L(i,t) pts(jj,k) squeeze(piplus(jj,k,1:end-1))' eval(intC)]';
                 end
             end
                         
             % calculate EV for t+1
-            Vdum(j) = Udum(j) + dlta*[.185 .63 .185]*Vtp1*squeeze(P(i,t,:));
+            Vdum(j) = Udum(j) + dlta*(1/sqrt(pi))*wxk*Vtp1*squeeze(P(i,t,:));
         end
         
         L(i,t) = lt(Vdum==max(Vdum));
